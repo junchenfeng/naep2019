@@ -5,10 +5,8 @@ import luigi
 import pandas as pd
 from tqdm import tqdm
 
-class MCSS_ITEM(object):
-    def __init__(self, right_result):
-        self.right_result = right_result
 
+class Item(object):
     def _separate(self, logs):
         attempts = []
         for log in logs:
@@ -23,6 +21,11 @@ class MCSS_ITEM(object):
                     continue
                 attempts[-1].append((action, result))
         return attempts
+
+
+class ItemMCSS(Item):
+    def __init__(self, right_result):
+        self.right_result = right_result
 
     def _judge_attempt(self, attempt):
         results = [log[1] for log in attempt if log[0] == "Click Choice"]
@@ -39,6 +42,120 @@ class MCSS_ITEM(object):
             for score in scores:
                 last_score = score if score in [0, 1] else last_score
         return last_score
+
+
+def translate(key_strokes, input_str):
+    output = input_str
+    for key in key_strokes:
+        if key in ["Backspace", "Delete"]:
+            if output:
+                output = output[:-1]
+        elif "Digit" in key:
+            output += key.strip("Digit")
+        elif key == "Period":
+            output += "."
+        elif "Key" in key:
+            output += key.strip("Key")
+        elif key == "Space":
+            output += " "
+        elif key == "Backslash":
+            output += "/"
+        elif key == "Slash":
+            output += "\\"
+        elif key == "Enter":
+            output += "\n"
+        elif key == "Equal":
+            output += "="
+        elif key == "ArrowRight":
+            output += ">"
+        elif key == "ArrowLeft":
+            output += "<"
+        elif key == "Minus":
+            output += "-"
+        elif key == "Comma":
+            output += ","
+        elif key == "Quote":
+            output += "'"
+        elif key == "Semicolon":
+            output += ";"
+        elif key == "BracketRight":
+            output += "}"
+        elif (
+            "Shift" in key
+            or "ControlLeft" in key
+            or key
+            in [
+                "CapsLock",
+                "Tab",
+                "ArrowDown",
+                "AltLeft",
+                "AltRight",
+                "ArrowUp",
+                "Insert",
+            ]
+        ):
+            # TODO: shift + key
+            continue
+        else:
+            print(key)
+    return output
+
+
+class ItemFillBlanks(Item):
+    def __init__(self, right_ans_list):
+        self.right_ans_list = right_ans_list
+
+    def _judge_attempt(self, attempt, input_str):
+        key_strokes = [
+            json.loads(log[1])["code"] for log in attempt if log[0] == "Math Keypress"
+        ]
+        output_str = translate(key_strokes, input_str)
+
+        return output_str
+
+    def judge(self, logs):
+        attempts = self._separate(logs)
+
+        output_str = self._judge_attempt(attempts[-1], "")
+        if len(attempts) > 1:
+            for j in range(1, len(attempts)):
+                output_str = self._judge_attempt(attempts[j], output_str)
+
+        return int(output_str in self.right_ans_list)
+
+
+class ItemMultipleBlanks(Item):
+    def __init__(self, right_ans_list):
+        self.right_ans_list = right_ans_list
+
+    def _judge_attempt(self, attempt, input_str_list):
+
+        key_strokes = [[] for j in range(5)]
+        for log in attempt:
+            if log[0] != "Math Keypress":
+                continue
+            key_obj = json.loads(log[1])
+
+            blank_idx = int(key_obj["numericIdentifier"]) - 1
+            key_strokes[blank_idx].append(key_obj["code"])
+
+        output_str_list = [
+            translate(key_strokes[j], input_str_list[j]) for j in range(5)
+        ]
+
+        return output_str_list
+
+    def judge(self, logs):
+        attempts = self._separate(logs)
+        output_str_list = ["" for j in range(5)]
+        if attempts:
+            output_str_list = self._judge_attempt(attempts[-1], output_str_list)
+            if len(attempts) > 1:
+                for j in range(1, len(attempts)):
+                    output_str_list = self._judge_attempt(attempts[j], output_str_list)
+
+        return [int(output_str_list[j] in self.right_ans_list[j]) for j in range(5)]
+
 
 '''
 # MCSS: 单选题
@@ -94,14 +211,15 @@ VH098753	VH098753_4:checked	28	58	48.3%
 
 # FillInBlank
 # VH134373
-{"numericIdentifier":"1","partId":"","contentMathML":"<math xmlns=\"http://www.w3.org/1998/Math/MathML\"/>","contentLaTeX":"$$","code":"Digit3"}
-{"numericIdentifier":"1","partId":"","contentMathML":"<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mn>3</mn></math>","contentLaTeX":"$3$","code":"Digit5"}
+# 95F ? C. Ans = 35
 # VH134387
-{"numericIdentifier":"1","partId":"","contentMathML":"<math xmlns=\"http://www.w3.org/1998/Math/MathML\"/>","contentLaTeX":"$$","code":"Digit6"}
-{"numericIdentifier":"1","partId":"","contentMathML":"<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mn>6</mn></math>","contentLaTeX":"$6$","code":"Digit0"}
+_\_，外角150度，求Y截距的角度
+
 
 # MultipleFillInBlank
 # VH134366 [5空]
+['3.75', '5', '6.25', '7.50', '8.75']
+TODO: 研究2333267625
 
 # MatchMS：连线题
 # VH139047
@@ -132,23 +250,26 @@ ITEM_LIST = [
     "VH139196",
 ]
 ITEM_REPO = {
-    "VH098783": MCSS_ITEM("VH098783_2:checked"),
-    "VH098522": MCSS_ITEM("VH098522_4:checked"),
-    "VH098597": MCSS_ITEM("VH098597_5:checked"),
-    "VH098519": MCSS_ITEM("VH098519_2:checked"),
-    "VH098759": MCSS_ITEM("VH098759_1:checked"),
-    "VH098779": MCSS_ITEM("VH098779_4:checked"),
-    "VH098808": MCSS_ITEM("VH098808_3:checked"),
-    "VH098810": MCSS_ITEM("VH098810_4:checked"),
-    "VH098839": MCSS_ITEM("VH098839_4:checked"),
-    "VH098834": MCSS_ITEM("VH098834_1:checked"),
-    "VH098812": MCSS_ITEM("VH098812_2:checked"),
-    "VH098556": MCSS_ITEM("VH098556_4:checked"),
-    #"VH098740": MCSS_ITEM("VH098740_4:checked"),
-    #"VH098753": MCSS_ITEM("VH098753_4:checked"),
+    "VH098783": ItemMCSS("VH098783_2:checked"),
+    "VH098522": ItemMCSS("VH098522_4:checked"),
+    "VH098597": ItemMCSS("VH098597_5:checked"),
+    "VH098519": ItemMCSS("VH098519_2:checked"),
+    "VH098759": ItemMCSS("VH098759_1:checked"),
+    "VH098779": ItemMCSS("VH098779_4:checked"),
+    "VH098808": ItemMCSS("VH098808_3:checked"),
+    "VH098810": ItemMCSS("VH098810_4:checked"),
+    "VH098839": ItemMCSS("VH098839_4:checked"),
+    "VH098834": ItemMCSS("VH098834_1:checked"),
+    "VH098812": ItemMCSS("VH098812_2:checked"),
+    "VH098556": ItemMCSS("VH098556_4:checked"),
+    "VH098740": ItemMCSS("VH098740_4:checked"),
+    "VH098753": ItemMCSS("VH098753_4:checked"),
+    "VH134373": ItemFillBlanks(["35", "35C"]),
+    "VH134387": ItemFillBlanks(["60", "X=60", "60 DEGREES"]),
+    "VH134366": ItemMultipleBlanks(
+        [["3.75"], ["5", "5.0", "5.00"], ["6.25"], ["7.50", "7.5"], ["8.75"]]
+    ),
 }
-
-
 
 
 class ConvertCsv2Json(luigi.Task):
@@ -184,8 +305,6 @@ class ConvertJson2Score(luigi.Task):
         return luigi.LocalTarget("data/mid/score.csv")
 
     def run(self):
-
-
 
         student_repo = json.load(self.input().open())
 
@@ -262,13 +381,16 @@ class FilterTopBehavior(luigi.Task):
         return FilterTopCandidates()
 
     def output(self):
-        return luigi.LocalTarget('data/mid/top_behavior.csv')
+        return luigi.LocalTarget("data/mid/top_behavior.csv")
 
     def run(self):
         all_data = pd.read_csv("data/data_a_train.csv")
         top_candidates = pd.read_csv(self.input().path, header=None)
 
-        all_data[all_data['STUDENTID'].isin(top_candidates[0])].to_csv(self.output().path, index=False)
+        all_data[all_data["STUDENTID"].isin(top_candidates[0])].to_csv(
+            self.output().path, index=False
+        )
+
 
 if __name__ == "__main__":
     luigi.run()
