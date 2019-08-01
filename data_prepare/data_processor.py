@@ -2,6 +2,9 @@ import pandas as pd
 
 from data_prepare.raw_data import RawData
 
+MID_PATH = "data/mid"
+TIME_PERIOD_DF_NAME = "time_period_df.csv"
+
 
 class DataProcessor(object):
     raw_data = RawData
@@ -13,22 +16,37 @@ class SimpleTestProcessor(DataProcessor):
         self.result_data = self.raw_data().data_train_label
         self.predict_data = self.raw_data().data_a_hidden_30
 
-    def get_time_period_df(self):
-        self.train_data["EventTime"] = pd.to_datetime(self.train_data.EventTime)
+    def get_train_time_period_df(self):
+        time_period_pivot_df = self.chang_data_to_time_period_df(self.train_data)
+        train_data = self.result_data.merge(
+            time_period_pivot_df, on="STUDENTID", how="left"
+        )
+        return train_data
+
+    def get_hidden_10_time_period_df(self):
+        time_period_pivot_df = self.chang_data_to_time_period_df(self.train_data)
+        return time_period_pivot_df
+
+    @classmethod
+    def chang_data_to_time_period_df(cls, df):
+        df["EventTime"] = pd.to_datetime(df.EventTime)
+        group_shift_judge: pd.Series = (
+            df["STUDENTID"] != df.shift().fillna(method="bfill")["STUDENTID"]
+        )
+        group_index = group_shift_judge.astype(int).cumsum().rename("group")
         converted_data = (
-            self.train_data.groupby(["STUDENTID", "AccessionNumber"])
+            df.groupby(["STUDENTID", "AccessionNumber", group_index])
             .apply(lambda x: max(x["EventTime"]) - min(x["EventTime"]))
             .reset_index()
             .rename(columns={0: "Duration"})
         )
         converted_data["Duration"] = converted_data["Duration"].dt.total_seconds()
-        time_period_pivot_df = (
+        return (
             converted_data.pivot("STUDENTID", "AccessionNumber", "Duration")
             .reset_index()
             .fillna(0)
         )
-        return self.result_data.merge(time_period_pivot_df, on="STUDENTID", how="left")
 
 
 if __name__ == "__main__":
-    time_period_df = SimpleTestProcessor().get_time_period_df()
+    SimpleTestProcessor().get_train_time_period_df()
