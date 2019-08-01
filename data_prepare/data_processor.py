@@ -13,6 +13,7 @@ class DataProcessor(object):
 class SimpleTestProcessor(DataProcessor):
     def __init__(self):
         self.train_data = self.raw_data().data_a_train
+        self.hidden_10 = self.raw_data().data_a_hidden_30
         self.result_data = self.raw_data().data_train_label
         self.predict_data = self.raw_data().data_a_hidden_30
 
@@ -24,7 +25,7 @@ class SimpleTestProcessor(DataProcessor):
         return train_data
 
     def get_hidden_10_time_period_df(self):
-        time_period_pivot_df = self.chang_data_to_time_period_df(self.train_data)
+        time_period_pivot_df = self.chang_data_to_time_period_df(self.hidden_10)
         return time_period_pivot_df
 
     @classmethod
