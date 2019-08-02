@@ -5,6 +5,9 @@ import luigi
 import pandas as pd
 from tqdm import tqdm
 
+NOT_DONE = "ND"
+NO_ANS = "NA"
+
 
 class Item(object):
     def _separate(self, logs):
@@ -21,27 +24,6 @@ class Item(object):
                     continue
                 attempts[-1].append((action, result))
         return attempts
-
-
-class ItemMCSS(Item):
-    def __init__(self, right_result):
-        self.right_result = right_result
-
-    def _judge_attempt(self, attempt):
-        results = [log[1] for log in attempt if log[0] == "Click Choice"]
-        return int(results[-1] == self.right_result) if results else -1
-
-    def judge(self, logs):
-        attempts = self._separate(logs)
-        scores = [self._judge_attempt(attempt) for attempt in attempts]
-
-        # 最后一次尝试可能没有做任何变动（跳过时）
-        # 或者每次都跳过无有效应答
-        last_score = None
-        if scores:
-            for score in scores:
-                last_score = score if score in [0, 1] else last_score
-        return last_score
 
 
 def translate(key_strokes, input_str):
@@ -76,10 +58,14 @@ def translate(key_strokes, input_str):
             output += ","
         elif key == "Quote":
             output += "'"
+        elif key == "Backquote":
+            output += "`"
         elif key == "Semicolon":
             output += ";"
         elif key == "BracketRight":
             output += "}"
+        elif key == "BracketLeft":
+            output += "{"
         elif (
             "Shift" in key
             or "ControlLeft" in key
@@ -92,13 +78,46 @@ def translate(key_strokes, input_str):
                 "AltRight",
                 "ArrowUp",
                 "Insert",
+                "",
             ]
         ):
             # TODO: shift + key
+            # TODO: ""说明有latex
             continue
         else:
             print(key)
     return output
+
+
+def score_list(user_list, right_list):
+    num_blank = len(right_list)
+    if all([x == [] for x in user_list]):
+        return NO_ANS
+    else:
+        return [int(user_list[j] in right_list[j]) for j in range(num_blank)]
+
+def extract_choice(choice_str):
+    return choice_str.split(':')[0][-1]
+
+class ItemMCSS(Item):
+    def __init__(self, right_result):
+        self.right_result = right_result
+
+    def _judge_attempt(self, attempt):
+        results = [extract_choice(log[1]) for log in attempt if log[0] == "Click Choice"]
+        return int(results[-1] == self.right_result) if results else -1
+
+    def judge(self, logs):
+        attempts = self._separate(logs)
+        scores = [self._judge_attempt(attempt) for attempt in attempts]
+
+        if scores:
+            last_score = NO_ANS
+            for score in scores:
+                last_score = score if score in [0, 1] else last_score
+            return last_score
+        else:
+            return NOT_DONE
 
 
 class ItemFillBlanks(Item):
@@ -125,12 +144,19 @@ class ItemFillBlanks(Item):
 
 
 class ItemMultipleBlanks(Item):
-    def __init__(self, right_ans_list):
-        self.right_ans_list = right_ans_list
+    def __init__(self):
+        self.right_ans_list = [
+            ["3.75"],
+            ["5", "5.0", "5.00"],
+            ["6.25"],
+            ["7.50", "7.5"],
+            ["8.75"],
+        ]
+        self.num_blank = 5
 
     def _judge_attempt(self, attempt, input_str_list):
 
-        key_strokes = [[] for j in range(5)]
+        key_strokes = [[] for j in range(self.num_blank)]
         for log in attempt:
             if log[0] != "Math Keypress":
                 continue
@@ -140,21 +166,89 @@ class ItemMultipleBlanks(Item):
             key_strokes[blank_idx].append(key_obj["code"])
 
         output_str_list = [
-            translate(key_strokes[j], input_str_list[j]) for j in range(5)
+            translate(key_strokes[j], input_str_list[j]) for j in range(self.num_blank)
         ]
 
         return output_str_list
 
     def judge(self, logs):
         attempts = self._separate(logs)
-        output_str_list = ["" for j in range(5)]
+        output_str_list = ["" for j in range(self.num_blank)]
         if attempts:
             output_str_list = self._judge_attempt(attempts[-1], output_str_list)
             if len(attempts) > 1:
                 for j in range(1, len(attempts)):
                     output_str_list = self._judge_attempt(attempts[j], output_str_list)
 
-        return [int(output_str_list[j] in self.right_ans_list[j]) for j in range(5)]
+        return score_list(output_str_list, self.right_ans_list)
+
+
+class ItemCompositeCR(Item):
+    def __init__(self):
+        self.right_ans_list = [
+            ["0.8", ".8", "0.80", ".80"],
+            ["1.4", "1.40"],
+            ["1.10", "1.1"],
+        ]
+        self.num_blank = 3
+
+    def _judge_attempt(self, attempt, input_str_list):
+
+        part_to_blank_ref = {"A": 0, "B": 1, "C": 2}
+
+        key_strokes = [[] for j in range(self.num_blank)]
+        for log in attempt:
+            if log[0] != "Math Keypress":
+                continue
+            key_obj = json.loads(log[1])
+
+            blank_idx = part_to_blank_ref[key_obj["partId"]]
+            key_strokes[blank_idx].append(key_obj["code"])
+
+        output_str_list = [
+            translate(key_strokes[j], input_str_list[j]) for j in range(self.num_blank)
+        ]
+
+        return output_str_list
+
+    def judge(self, logs):
+        attempts = self._separate(logs)
+        output_str_list = ["" for j in range(self.num_blank)]
+        if attempts:
+            output_str_list = self._judge_attempt(attempts[-1], output_str_list)
+            if len(attempts) > 1:
+                for j in range(1, len(attempts)):
+                    output_str_list = self._judge_attempt(attempts[j], output_str_list)
+
+        return score_list(output_str_list, self.right_ans_list)
+
+
+class ItemMatchMS(Item):
+    def __init__(self):
+
+        self.right_ans_list = [[2], [1], [3], [4]]
+        self.num_blank = 4
+
+    def _judge_attempt(self, attempt, user_ans_list):
+
+        for log in attempt:
+            if log[0] != "DropChoice":
+                continue
+            for choice in json.loads(log[1]):
+
+                user_ans_list[int(choice["source"]) - 1] = choice["target"]
+        return user_ans_list
+
+    def judge(self, logs):
+        attempts = self._separate(logs)
+        user_ans_list = [[] for i in range(self.num_blank)]
+        if attempts:
+            user_ans_list = self._judge_attempt(attempts[-1], user_ans_list)
+            if len(attempts) > 1:
+                for j in range(1, len(attempts)):
+                    user_ans_list = self._judge_attempt(attempts[j], user_ans_list)
+
+        return score_list(user_ans_list, self.right_ans_list)
 
 
 '''
@@ -223,9 +317,12 @@ TODO: 研究2333267625
 
 # MatchMS：连线题
 # VH139047
+5个连线题
 
 # CompositeCR:复合开放题
 # VH139196
+3题1空
+
 '''
 
 ITEM_LIST = [
@@ -250,25 +347,25 @@ ITEM_LIST = [
     "VH139196",
 ]
 ITEM_REPO = {
-    "VH098783": ItemMCSS("VH098783_2:checked"),
-    "VH098522": ItemMCSS("VH098522_4:checked"),
-    "VH098597": ItemMCSS("VH098597_5:checked"),
-    "VH098519": ItemMCSS("VH098519_2:checked"),
-    "VH098759": ItemMCSS("VH098759_1:checked"),
-    "VH098779": ItemMCSS("VH098779_4:checked"),
-    "VH098808": ItemMCSS("VH098808_3:checked"),
-    "VH098810": ItemMCSS("VH098810_4:checked"),
-    "VH098839": ItemMCSS("VH098839_4:checked"),
-    "VH098834": ItemMCSS("VH098834_1:checked"),
-    "VH098812": ItemMCSS("VH098812_2:checked"),
-    "VH098556": ItemMCSS("VH098556_4:checked"),
-    "VH098740": ItemMCSS("VH098740_4:checked"),
-    "VH098753": ItemMCSS("VH098753_4:checked"),
+    "VH098783": ItemMCSS("2"),
+    "VH098522": ItemMCSS("4"),
+    "VH098597": ItemMCSS("5"),
+    "VH098519": ItemMCSS("2"),
+    "VH098759": ItemMCSS("1"),
+    "VH098779": ItemMCSS("4"),
+    "VH098808": ItemMCSS("3"),
+    "VH098810": ItemMCSS("4"),
+    "VH098839": ItemMCSS("4"),
+    "VH098834": ItemMCSS("1"),
+    "VH098812": ItemMCSS("2"),
+    "VH098556": ItemMCSS("4"),
+    "VH098740": ItemMCSS("4"),
+    "VH098753": ItemMCSS("4"),
     "VH134373": ItemFillBlanks(["35", "35C"]),
     "VH134387": ItemFillBlanks(["60", "X=60", "60 DEGREES"]),
-    "VH134366": ItemMultipleBlanks(
-        [["3.75"], ["5", "5.0", "5.00"], ["6.25"], ["7.50", "7.5"], ["8.75"]]
-    ),
+    "VH134366": ItemMultipleBlanks(),
+    "VH139196": ItemCompositeCR(),
+    "VH139047": ItemMatchMS(),
 }
 
 
@@ -313,81 +410,13 @@ class ConvertJson2Score(luigi.Task):
             score_log = [sid, obj["label"]]
             for qid in ITEM_LIST:
                 if qid in obj["logs"]:
-                    if qid in ITEM_REPO:
-                        score_log.append(ITEM_REPO[qid].judge(obj["logs"][qid]))
-                    else:
-                        score_log.append(-1)
+                    score = ITEM_REPO[qid].judge(obj["logs"][qid])
+                    score_log.append(json.dumps(score))
                 else:
-                    score_log.append(None)
+                    score_log.append(NOT_DONE)
             score_table.append(score_log)
 
         pd.DataFrame(score_table, columns=["sid", "label"] + ITEM_LIST).to_csv(
-            self.output().path, index=False
-        )
-
-
-class FilterTopCandidates(luigi.Task):
-    def requires(self):
-        return ConvertJson2Score()
-
-    def output(self):
-        return luigi.LocalTarget("data/mid/top_candidates.csv")
-
-    def run(self):
-        score_df = pd.read_csv(self.input().path)
-
-        filter_items = [x for x in ITEM_REPO.keys()]
-
-        candidates = score_df[
-            (score_df[filter_items[0]] == 1)
-            & (score_df[filter_items[1]] == 1)
-            & (score_df[filter_items[2]] == 1)
-            & (score_df[filter_items[3]] == 1)
-            & (score_df[filter_items[4]] == 1)
-            & (score_df[filter_items[5]] == 1)
-            & (score_df[filter_items[6]] == 1)
-            & (score_df[filter_items[7]] == 1)
-            & (score_df[filter_items[8]] == 1)
-            & (score_df[filter_items[9]] == 1)
-            & (score_df[filter_items[10]] == 1)
-            & (score_df[filter_items[11]] == 1)
-        ]["sid"]
-        """
-        all_data = pd.read_csv("data/data_a_train.csv")
-        
-        mcss_stat = (
-            all_data[
-                (all_data["ItemType"] == "MCSS")
-                & (all_data["Observable"] == "Click Choice")
-                & (all_data["STUDENTID"].isin(candidates))
-            ]
-            .groupby(["AccessionNumber", "ExtendedInfo"])
-            .agg({"STUDENTID": "count"})
-            .reset_index()
-            .rename(columns={"STUDENTID": "count"})
-        )
-
-        right_idx = mcss_stat.groupby(['AccessionNumber'])['count'].transform(max) == mcss_stat['count']
-        mcss_right_answer = mcss_stat[right_idx]
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-            print(mcss_stat)
-            print(mcss_right_answer)
-        """
-        candidates.to_csv(self.output().path, index=False)
-
-
-class FilterTopBehavior(luigi.Task):
-    def requires(self):
-        return FilterTopCandidates()
-
-    def output(self):
-        return luigi.LocalTarget("data/mid/top_behavior.csv")
-
-    def run(self):
-        all_data = pd.read_csv("data/data_a_train.csv")
-        top_candidates = pd.read_csv(self.input().path, header=None)
-
-        all_data[all_data["STUDENTID"].isin(top_candidates[0])].to_csv(
             self.output().path, index=False
         )
 
