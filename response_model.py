@@ -25,5 +25,5 @@ clf = RandomForestClassifier(n_estimators=1000, max_features=80)
 clf.fit(X_train, y_train)
 
 phat = clf.predict_proba(X_test)
-fpr, tpr, thresholds = metrics.roc_curve(y_test, phat[:,1])
+fpr, tpr, thresholds = metrics.roc_curve(y_test, phat[:, 1])
 print(metrics.auc(fpr, tpr))

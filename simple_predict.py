@@ -23,7 +23,9 @@ class SimplePredict(object):
         self.model.fit(x, y)
         result = self.model.predict_proba(self.hidden_data.iloc[:, 1:].values)
         pd.DataFrame(result, columns=[False, True], index=self.hidden_data["STUDENTID"])
-        result_df = pd.DataFrame(result, columns=[False, True], index=self.hidden_data["STUDENTID"])
+        result_df = pd.DataFrame(
+            result, columns=[False, True], index=self.hidden_data["STUDENTID"]
+        )
         result_df.to_csv(os.path.join(RESULT_DIR, HIDDEN_30_NAME))
 
 
