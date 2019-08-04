@@ -1,11 +1,12 @@
 import os
+from datetime import date
 from sklearn.ensemble import RandomForestClassifier
 import pandas as pd
 from data_prepare.data_processor import SimpleTestProcessor
 
 RESULT_DIR = "data/result"
 HIDDEN_30_NAME = "hidden_30_result.csv"
-TOTAL_HIDDEN_NAME = "total_hidden.csv"
+TOTAL_HIDDEN_NAME = f"total_hidden_{date.today()}.csv"
 
 
 class SimplePredict(object):
@@ -25,11 +26,8 @@ class SimplePredict(object):
         y = self.train_data.iloc[:, 1].astype(int).values
         self.model.fit(x, y)
         result = self.model.predict_proba(hidden_data.values)
-        pd.DataFrame(
-            result, columns=["False", "True"], index=self.hidden_data["STUDENTID"]
-        )
         result_df = pd.DataFrame(
-            result, columns=["False", "True"], index=self.hidden_data["STUDENTID"]
+            result, columns=["False", "True"], index=self.hidden_data.index
         )
         result_df = self.hidden_label.merge(result_df, on="STUDENTID", how="left")
         result_df[["True"]].to_csv(
