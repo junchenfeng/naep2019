@@ -1,13 +1,12 @@
 import pandas as pd
 import numpy as np
 
-from data_prepare.raw_data import RawData
 
 MID_PATH = "data/mid"
 TIME_PERIOD_DF_NAME = "time_period_df.csv"
 
 # raw data constants
-STUDENTID = "STUDENTID"
+INDEX_VAR = "STUDENTID"
 ACCESSION_NUMBER = "AccessionNumber"
 OBSERVABLE = "Observable"
 EVENT_TIME = "EventTime"
@@ -23,42 +22,7 @@ CUMSUM_GROUP_INDEX = "cumsum_group_index"
 DURATION = "Duration"
 
 
-class DataProcessor(object):
-    raw_data = RawData
-
-
-class SimpleTestProcessor(DataProcessor):
-    def __init__(self):
-        self.train_data = self.raw_data().data_a_train
-        self.hidden_10 = self.raw_data().data_a_hidden_10
-        self.hidden_20 = self.raw_data().data_a_hidden_20
-        self.hidden_30 = self.raw_data().data_a_hidden_30
-        self.hidden_label = self.raw_data().hidden_label
-        self.result_data = self.raw_data().data_train_label
-        self.predict_data = self.raw_data().data_a_hidden_30
-
-    def get_train_time_period_df(self):
-        feature_df = self.change_data_to_feature_df(self.train_data)
-        train_data = self.result_data.merge(
-            feature_df, on="STUDENTID", how="left"
-        )
-        return train_data
-
-    def get_hidden_30_time_period_df(self):
-        time_period_pivot_df = self.change_data_to_feature_df(self.hidden_30)
-        return time_period_pivot_df
-
-    def get_total_hidden_period_df(self):
-        return pd.concat(
-            [
-                self.change_data_to_feature_df(self.hidden_10),
-                self.change_data_to_feature_df(self.hidden_20),
-                self.change_data_to_feature_df(self.hidden_30),
-            ],
-            axis=0,
-            sort=False,
-        ).fillna(0)
-
+class FeatureProcessor(object):
     @classmethod
     def change_data_to_feature_df(cls, df):
         df.loc[:, "EventTime"] = pd.to_datetime(df.EventTime)
@@ -102,20 +66,20 @@ class SimpleTestProcessor(DataProcessor):
         )
         df_with_raw_rank.loc[:, CUMSUM_GROUP_INDEX] = (
             df_with_raw_rank.sort_values(
-                by=[STUDENTID, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX, EVENT_TIME]
+                by=[INDEX_VAR, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX, EVENT_TIME]
             )
-            .groupby([STUDENTID, ACCESSION_NUMBER])[CUMSUM_GROUP_INDEX]
+            .groupby([INDEX_VAR, ACCESSION_NUMBER])[CUMSUM_GROUP_INDEX]
             .rank("dense")
         )
         df_with_raw_rank = df_with_raw_rank.sort_values(
-            by=[STUDENTID, EVENT_TIME, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX]
+            by=[INDEX_VAR, EVENT_TIME, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX]
         )
         return df_with_raw_rank
 
     @classmethod
     def get_question_attempt_duration(cls, df):
         converted_data = (
-            df.groupby([STUDENTID, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX])
+            df.groupby([INDEX_VAR, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX])
             .apply(lambda x: max(x[EVENT_TIME]) - min(x[EVENT_TIME]))
             .reset_index()
             .rename(columns={0: DURATION})
@@ -129,7 +93,7 @@ class SimpleTestProcessor(DataProcessor):
 
         return converted_data.pivot_table(
             values=DURATION,
-            index=STUDENTID,
+            index=INDEX_VAR,
             columns=[converted_data.AccessionNumber, converted_data.cumsum_group_index],
         ).fillna(0)
 
@@ -146,7 +110,7 @@ class SimpleTestProcessor(DataProcessor):
     @classmethod
     def get_question_parameter(cls, df):
         converted_data = cls.get_question_attempt_duration(df)
-        common_parameters = converted_data.groupby([STUDENTID, ACCESSION_NUMBER]).apply(
+        common_parameters = converted_data.groupby([INDEX_VAR, ACCESSION_NUMBER]).apply(
             cls.get_question_parameters
         )
         return common_parameters.reset_index()
@@ -156,7 +120,7 @@ class SimpleTestProcessor(DataProcessor):
         question_common_parameters = cls.get_question_parameter(df)
         return question_common_parameters.pivot_table(
             values=["valid_attempt_times", "valid_attempt_mean"],
-            index=STUDENTID,
+            index=INDEX_VAR,
             columns=ACCESSION_NUMBER,
         ).fillna(0)
 
@@ -184,11 +148,11 @@ class SimpleTestProcessor(DataProcessor):
 
         all_questions = df[ACCESSION_NUMBER].drop_duplicates()
         converted_data = cls.get_question_attempt_duration(df)
-        common_parameters = converted_data.groupby([STUDENTID]).apply(
+        common_parameters = converted_data.groupby([INDEX_VAR]).apply(
             cls.get_student_parameters, all_questions
         )
         return common_parameters
 
 
 if __name__ == "__main__":
-    SimpleTestProcessor().get_train_time_period_df()
+    FeatureProcessor().get_train_time_period_df()

@@ -96,15 +96,19 @@ def score_list(user_list, right_list):
     else:
         return [int(user_list[j] in right_list[j]) for j in range(num_blank)]
 
+
 def extract_choice(choice_str):
-    return choice_str.split(':')[0][-1]
+    return choice_str.split(":")[0][-1]
+
 
 class ItemMCSS(Item):
     def __init__(self, right_result):
         self.right_result = right_result
 
     def _judge_attempt(self, attempt):
-        results = [extract_choice(log[1]) for log in attempt if log[0] == "Click Choice"]
+        results = [
+            extract_choice(log[1]) for log in attempt if log[0] == "Click Choice"
+        ]
         return int(results[-1] == self.right_result) if results else -1
 
     def judge(self, logs):
