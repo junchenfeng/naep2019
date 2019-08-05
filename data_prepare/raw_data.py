@@ -17,32 +17,6 @@ DATA_A_HIDDEN_30_FILE_NAME = "data_a_hidden_30.csv"
 HIDDEN_LABEL_FILE_NAME = "hidden_label.csv"
 
 
-class RawData(object):
-    @property
-    def data_a_hidden_10(self):
-        return pd.read_csv(os.path.join(DATA_PATH, DATA_A_HIDDEN_10_FILE_NAME))
-
-    @property
-    def data_a_hidden_20(self):
-        return pd.read_csv(os.path.join(DATA_PATH, DATA_A_HIDDEN_20_FILE_NAME))
-
-    @property
-    def data_a_hidden_30(self):
-        return pd.read_csv(os.path.join(DATA_PATH, DATA_A_HIDDEN_30_FILE_NAME))
-
-    @property
-    def data_a_train(self):
-        return pd.read_csv(os.path.join(DATA_PATH, DATA_A_TRAIN_FILE_NAME))
-
-    @property
-    def data_train_label(self):
-        return pd.read_csv(os.path.join(DATA_PATH, DATA_TRAIN_LABEL_FILE_NAME))
-
-    @property
-    def hidden_label(self):
-        return pd.read_csv(os.path.join(DATA_PATH, HIDDEN_LABEL_FILE_NAME))
-
-
 def main():
     """
     把原始数据也切割为10，20，30
@@ -63,7 +37,9 @@ def main():
     all_df["Duration"] = all_df["Duration"].dt.total_seconds()
 
     all_df[all_df["Duration"] <= 600].to_csv(f"{DATA_PATH}/{DATA_A_TRAIN_10_FILE_NAME}")
-    all_df[all_df["Duration"] <= 1200].to_csv(f"{DATA_PATH}/{DATA_A_TRAIN_20_FILE_NAME}")
+    all_df[all_df["Duration"] <= 1200].to_csv(
+        f"{DATA_PATH}/{DATA_A_TRAIN_20_FILE_NAME}"
+    )
     # 4493 entries exceeding the time limit. Probably retain the intergrity of an item.
     all_df.to_csv(f"{DATA_PATH}/{DATA_A_TRAIN_30_FILE_NAME}")
 
