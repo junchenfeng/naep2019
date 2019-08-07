@@ -72,7 +72,9 @@ class RandForest(BaseModel):
 
     @classmethod
     def classifer(cls):
-        return RandomForestClassifier(n_estimators=1000, random_state=0, verbose=1)
+        return RandomForestClassifier(
+            n_estimators=1000, random_state=0, verbose=1, max_features=0.7
+        )
 
     @property
     def metrics(self):
