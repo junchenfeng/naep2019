@@ -54,7 +54,7 @@ ITEM_REPO = {
     "VH098783": ItemMCSS(2),
     "VH098812": ItemMCSS(2),
     "VH139196": ItemCompositeCR(),
-    "VH134373": ItemFillBlanks(["35", "35C"]),
+    "VH134373": ItemFillBlanks(["35", "35C", "C=35", "35 DEGREES CELSIUS"]),
     "VH098839": ItemMCSS(4),
     "VH098597": ItemMCSS(5),
     "VH098556": ItemMCSS(4),
@@ -66,19 +66,27 @@ ITEM_REPO = {
 
 class ConvertStreamTable2Json(luigi.Task):
     batch_id = luigi.Parameter()
+    task = luigi.Parameter()
 
     def output(self):
-        return luigi.LocalTarget(f"data/mid/raw_{self.batch_id}.json")
+        return luigi.LocalTarget(f"data/mid/raw_{self.task}_{self.batch_id}.json")
 
     def run(self):
         student_repo = dict()
-        label_data = pd.read_csv("data/raw/data_train_label.csv")
+        if self.task == "train":
+            label_file_path = "data/raw/data_train_label.csv"
+        else:
+            label_file_path = "data/raw/hidden_label.csv"
+        label_data = pd.read_csv(label_file_path)
         for j in range(label_data.shape[0]):
             sid = str(label_data.iloc[j]["STUDENTID"])
-            label = int(label_data.iloc[j]["EfficientlyCompletedBlockB"])
+            if self.task == "train":
+                label = int(label_data.iloc[j]["EfficientlyCompletedBlockB"])
+            else:
+                label = None
             student_repo[sid] = {"label": label, "logs": defaultdict(list)}
 
-        log_data = pd.read_csv(f"data/raw/data_a_train_{self.batch_id}.csv")
+        log_data = pd.read_csv(f"data/raw/data_a_{self.task}_{self.batch_id}.csv")
         for i in tqdm(range(log_data.shape[0])):
             sid = str(log_data.iloc[i]["STUDENTID"])
             qid = log_data.iloc[i]["AccessionNumber"]
@@ -97,12 +105,13 @@ class ConvertStreamTable2Json(luigi.Task):
 
 class ConvertStream2Response(luigi.Task):
     batch_id = luigi.Parameter()
+    task = luigi.Parameter()
 
     def requires(self):
-        return ConvertStreamTable2Json(self.batch_id)
+        return ConvertStreamTable2Json(self.batch_id, task=self.task)
 
     def output(self):
-        return luigi.LocalTarget(f"data/mid/response_{self.batch_id}.csv")
+        return luigi.LocalTarget(f"data/mid/response_{self.task}_{self.batch_id}.csv")
 
     def run(self):
         student_repo = json.load(self.input().open())

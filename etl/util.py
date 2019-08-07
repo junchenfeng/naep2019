@@ -150,7 +150,7 @@ class ItemMultipleBlanks(Item):
     def __init__(self):
         self.right_ans_list = [
             ["3.75"],
-            ["5", "5.0", "5.00"],
+            ["5", "5.0", "5.00", "5.000"],
             ["6.25"],
             ["7.50", "7.5"],
             ["8.75"],

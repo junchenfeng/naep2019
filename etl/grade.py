@@ -67,12 +67,13 @@ TODO: 研究2333267625
 
 class GradePaper(luigi.Task):
     batch_id = luigi.Parameter()
+    task = luigi.Parameter()
 
     def requires(self):
-        return ConvertStream2Response(batch_id=self.batch_id)
+        return ConvertStream2Response(batch_id=self.batch_id, task=self.task)
 
     def output(self):
-        return luigi.LocalTarget(f"data/mid/score_{self.batch_id}.csv")
+        return luigi.LocalTarget(f"data/mid/score_{self.task}_{self.batch_id}.csv")
 
     def run(self):
 
@@ -89,16 +90,22 @@ class GradePaper(luigi.Task):
                     score = resp
                 else:
                     qid = ITEM_LIST[j]
-                    try:
-                        score = ITEM_REPO[qid].judge(resp.strip("\\"))
-                    except:
-                        print("a")
+                    if isinstance(resp, str):
+                        resp = resp.strip("\\").strip("\n")
+                    score = ITEM_REPO[qid].judge(resp)
                 score_log.append(score)
             score_table.append(score_log)
 
         pd.DataFrame(score_table, columns=["sid", "label"] + ITEM_LIST).to_csv(
             self.output().path, index=False
         )
+
+
+class Grade(luigi.Task):
+    def requires(self):
+        yield [GradePaper(batch_id=x, task='train') for x in ["10", "20", "30"]]
+        yield [GradePaper(batch_id=x, task='hidden') for x in ["10", "20", "30"]]
+
 
 
 if __name__ == "__main__":

@@ -2,7 +2,9 @@ import os
 import pickle
 
 import pandas as pd
+from sklearn.preprocessing import OneHotEncoder
 
+from constant import TASK_TRAIN, TASK_HIDDEN
 from etl.raw_data import (
     DATA_A_TRAIN_10_FILE_NAME,
     DATA_A_TRAIN_20_FILE_NAME,
@@ -15,12 +17,16 @@ from etl.raw_data import (
     DATA_PATH,
 )
 from etl.data_processor import FeatureProcessor, INDEX_VAR
+from etl.response import ITEM_LIST
+from etl.grade import GradePaper
 from model.ensemble import RandForest
 
+
+
 BATCH_NAME_REF = {
-    "10": {"train": DATA_A_TRAIN_10_FILE_NAME, "predict": DATA_A_HIDDEN_10_FILE_NAME},
-    "20": {"train": DATA_A_TRAIN_20_FILE_NAME, "predict": DATA_A_HIDDEN_20_FILE_NAME},
-    "30": {"train": DATA_A_TRAIN_30_FILE_NAME, "predict": DATA_A_HIDDEN_30_FILE_NAME},
+    "10": {TASK_TRAIN: DATA_A_TRAIN_10_FILE_NAME, TASK_HIDDEN: DATA_A_HIDDEN_10_FILE_NAME},
+    "20": {TASK_TRAIN: DATA_A_TRAIN_20_FILE_NAME, TASK_HIDDEN: DATA_A_HIDDEN_20_FILE_NAME},
+    "30": {TASK_TRAIN: DATA_A_TRAIN_30_FILE_NAME, TASK_HIDDEN: DATA_A_HIDDEN_30_FILE_NAME},
 }
 
 BATCH_IDS = ["10", "20", "30"]
@@ -34,22 +40,44 @@ def feature_extraction(batch_id: str, task_name: str):
     """
 
     :param batch_id: 10, 20 or 30
-    :param task_name: train or predict
+    :param task_name: train or hidden
     :return:
     """
 
-    df = pd.read_csv(os.path.join(DATA_PATH, BATCH_NAME_REF[batch_id][task_name]))
-    feature_df = FeatureProcessor().change_data_to_feature_df(df)
+    all_paper_df = pd.read_csv(
+        GradePaper(batch_id=batch_id, task=task_name).output().path
+    ).set_index("sid")
+    if batch_id == "10":
+        paper_df = all_paper_df.loc[:, ITEM_LIST[:9]]
+    elif batch_id == "20":
+        paper_df = all_paper_df.loc[:, ITEM_LIST[:15]]
+    else:
+        paper_df = all_paper_df.loc[:, ITEM_LIST]
 
-    return feature_df
+    enc = OneHotEncoder(handle_unknown="ignore")
+    enc.fit(paper_df)
+    discrete_paper_df = pd.DataFrame(
+        enc.transform(paper_df).toarray(),
+        index=paper_df.index.tolist(),
+        columns=enc.get_feature_names(),
+    )
+
+    df = pd.read_csv(os.path.join(DATA_PATH, BATCH_NAME_REF[batch_id][task_name]))
+    feature_df = FeatureProcessor().change_data_to_feature_df(df)  # time
+
+    all_feature = pd.merge(
+        feature_df, discrete_paper_df, left_index=True, right_index=True, how="left"
+    )
+
+    return all_feature
 
 
 def model_training(batch_id, model_name: str):
     label_df = pd.read_csv(
         os.path.join(DATA_PATH, DATA_TRAIN_LABEL_FILE_NAME)
     ).set_index(INDEX_VAR)
-    train_feature_df = feature_extraction(batch_id, "train")
-    hidden_feature_df = feature_extraction(batch_id, "predict")
+    train_feature_df = feature_extraction(batch_id, TASK_TRAIN)
+    hidden_feature_df = feature_extraction(batch_id, TASK_HIDDEN)
     train_data = pd.merge(
         train_feature_df, label_df, left_index=True, right_index=True
     )  # make sure they are aligned by student id
@@ -107,3 +135,5 @@ def main(model_name: str):
 
 if __name__ == "__main__":
     main("random_forest")
+    # feature_extraction("10", "train")
+    # model_training("30", "random_forest")
