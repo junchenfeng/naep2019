@@ -3,7 +3,7 @@ import pickle
 
 import pandas as pd
 
-from data_prepare.raw_data import (
+from etl.raw_data import (
     DATA_A_TRAIN_10_FILE_NAME,
     DATA_A_TRAIN_20_FILE_NAME,
     DATA_A_TRAIN_30_FILE_NAME,
@@ -14,7 +14,7 @@ from data_prepare.raw_data import (
     HIDDEN_LABEL_FILE_NAME,
     DATA_PATH,
 )
-from data_prepare.data_processor import FeatureProcessor, INDEX_VAR
+from etl.data_processor import FeatureProcessor, INDEX_VAR
 from model.ensemble import RandForest
 
 BATCH_NAME_REF = {
@@ -28,6 +28,7 @@ BATCH_IDS = ["10", "20", "30"]
 RESULT_DIR = "data/result"
 if not os.path.exists(RESULT_DIR):
     os.makedirs(RESULT_DIR)
+
 
 def feature_extraction(batch_id: str, task_name: str):
     """
@@ -69,12 +70,12 @@ def model_training(batch_id, model_name: str):
 def main(model_name: str):
     cache_file_path = os.path.join(RESULT_DIR, f"{model_name}_cache.p")
     if os.path.exists(cache_file_path):
-        model_repo = pickle.load(open(cache_file_path, 'rb'))
+        model_repo = pickle.load(open(cache_file_path, "rb"))
     else:
         model_repo = {}
         for batch_id in BATCH_IDS:
             model_repo[batch_id] = model_training(batch_id, model_name)
-        pickle.dump(model_repo, open(cache_file_path,'wb'))
+        pickle.dump(model_repo, open(cache_file_path, "wb"))
 
     predicted_labels = pd.concat(
         [
