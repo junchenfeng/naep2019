@@ -103,9 +103,8 @@ class GradePaper(luigi.Task):
 
 class Grade(luigi.Task):
     def requires(self):
-        yield [GradePaper(batch_id=x, task='train') for x in ["10", "20", "30"]]
-        yield [GradePaper(batch_id=x, task='hidden') for x in ["10", "20", "30"]]
-
+        yield [GradePaper(batch_id=x, task="train") for x in ["10", "20", "30"]]
+        yield [GradePaper(batch_id=x, task="hidden") for x in ["10", "20", "30"]]
 
 
 if __name__ == "__main__":
