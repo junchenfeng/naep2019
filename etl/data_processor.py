@@ -35,13 +35,16 @@ class FeatureProcessor(object):
         question_duration_features = cls.get_question_attempt_duration_features(
             df
         ).add_prefix("x_")
-        question_verb_chain_features = cls.get_question_verb_chain_features(df)
+
         question_common_parameter_features = cls.get_question_common_parameter_features(
             df
         ).add_prefix("y_")
         student_common_parameter_features = cls.get_student_common_parameter_features(
             df
         ).add_prefix("z_")
+        question_verb_chain_features = cls.get_question_verb_chain_features(
+            df
+        ).add_prefix("m_")
         return pd.concat(
             [
                 question_verb_chain_features,
@@ -174,7 +177,6 @@ class FeatureProcessor(object):
                 values=["tmp"], index=INDEX_VAR, columns=[ACCESSION_NUMBER, VERB_CHAIN]
             )
             .fillna(0)
-            .shape
         )
 
     @classmethod
