@@ -1,6 +1,9 @@
+import os
+
 import pandas as pd
 import numpy as np
 
+from etl.raw_data import DATA_PATH
 
 MID_PATH = "data/mid"
 TIME_PERIOD_DF_NAME = "time_period_df.csv"
@@ -15,6 +18,7 @@ BLOCK_REV = "BlockRev"
 EOS_TIME_LFT = "EOSTimeLft"
 HELP_MAT_8 = "HELPMAT8"
 SEC_TIME_OUT = "SecTimeOut"
+VERB_CHAIN = "verb_chain"
 
 
 # custom constants
@@ -31,6 +35,7 @@ class FeatureProcessor(object):
         question_duration_features = cls.get_question_attempt_duration_features(
             df
         ).add_prefix("x_")
+        question_verb_chain_features = cls.get_question_verb_chain_features(df)
         question_common_parameter_features = cls.get_question_common_parameter_features(
             df
         ).add_prefix("y_")
@@ -39,6 +44,7 @@ class FeatureProcessor(object):
         ).add_prefix("z_")
         return pd.concat(
             [
+                question_verb_chain_features,
                 question_duration_features,
                 question_common_parameter_features,
                 student_common_parameter_features,
@@ -58,7 +64,7 @@ class FeatureProcessor(object):
 
     @classmethod
     def add_common_attempt_index(cls, df):
-        group_shift_judge: pd.Series = (
+        group_shift_judge = pd.Series(
             df[ACCESSION_NUMBER] != df.shift().fillna(method="bfill")[ACCESSION_NUMBER]
         )
         df_with_raw_rank = df.assign(
@@ -85,6 +91,41 @@ class FeatureProcessor(object):
             .rename(columns={0: DURATION})
         )
         converted_data[DURATION] = converted_data[DURATION].dt.total_seconds()
+        return converted_data
+
+    @classmethod
+    def get_question_attempt_verb_chain(cls, df):
+        def question_verb_chain(sub_df):
+            group_shift_judge = pd.Series(
+                sub_df[OBSERVABLE] != sub_df.shift().fillna(method="bfill")[OBSERVABLE]
+            )
+            df_with_raw_rank = sub_df.assign(
+                cumsum_group_index=group_shift_judge.astype(int).cumsum()
+            )
+            verb_group = (
+                df_with_raw_rank.groupby(
+                    [OBSERVABLE, "cumsum_group_index"], sort=False
+                )[EVENT_TIME]
+                .count()
+                .reset_index()
+                .rename(columns={EVENT_TIME: "verb_count"})
+            )
+            verb_chain_series = (
+                verb_group["cumsum_group_index"].astype(str)
+                + "_"
+                + verb_group[OBSERVABLE]
+                + "("
+                + verb_group["verb_count"].astype(str)
+                + ")"
+            )
+            return "=>".join(verb_chain_series.to_list())
+
+        converted_data = (
+            df.groupby([INDEX_VAR, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX])
+            .apply(question_verb_chain)
+            .reset_index()
+            .rename(columns={0: VERB_CHAIN})
+        )
         return converted_data
 
     @classmethod
@@ -125,6 +166,18 @@ class FeatureProcessor(object):
         ).fillna(0)
 
     @classmethod
+    def get_question_verb_chain_features(cls, df):
+        question_convert_chain = cls.get_question_attempt_verb_chain(df)
+        return (
+            question_convert_chain.assign(tmp=1)
+            .pivot_table(
+                values=["tmp"], index=INDEX_VAR, columns=[ACCESSION_NUMBER, VERB_CHAIN]
+            )
+            .fillna(0)
+            .shape
+        )
+
+    @classmethod
     def get_student_parameters(cls, sub_df, all_questions):
         valid_record = sub_df[sub_df[DURATION] > 1]
         all_question_count = all_questions.shape[0]
@@ -155,4 +208,5 @@ class FeatureProcessor(object):
 
 
 if __name__ == "__main__":
-    FeatureProcessor().get_train_time_period_df()
+    data_a_train_10 = pd.read_csv(os.path.join(DATA_PATH, "data_a_train_10.csv"))
+    FeatureProcessor().change_data_to_feature_df(data_a_train_10)
