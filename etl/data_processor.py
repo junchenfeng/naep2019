@@ -22,8 +22,11 @@ VERB_CHAIN = "verb_chain"
 
 
 # custom constants
-CUMSUM_GROUP_INDEX = "cumsum_group_index"
+ADJACENT_GROUP_INDEX = "adjacent_group_index"
+VERB_ADJACENT_GROUP_INDEX = "verb_adjacent_group_index"
 DURATION = "Duration"
+
+# verb_map
 
 
 class FeatureProcessor(object):
@@ -67,68 +70,82 @@ class FeatureProcessor(object):
 
     @classmethod
     def add_common_attempt_index(cls, df):
+        df_with_accession_rank = cls.get_adjacent_index(
+            df, ACCESSION_NUMBER, [INDEX_VAR, ACCESSION_NUMBER], ADJACENT_GROUP_INDEX
+        )
+        df_with_accession_and_verb_rank = cls.get_adjacent_index(
+            df_with_accession_rank,
+            OBSERVABLE,
+            [INDEX_VAR, ACCESSION_NUMBER, ADJACENT_GROUP_INDEX],
+            VERB_ADJACENT_GROUP_INDEX,
+        )
+        df_with_accession_and_verb_rank = df_with_accession_and_verb_rank.sort_values(
+            by=[INDEX_VAR, EVENT_TIME, ACCESSION_NUMBER, ADJACENT_GROUP_INDEX]
+        )
+        return df_with_accession_and_verb_rank
+
+    @classmethod
+    def get_adjacent_index(cls, df, target_column, index_columns, rank_column_name):
         group_shift_judge = pd.Series(
-            df[ACCESSION_NUMBER] != df.shift().fillna(method="bfill")[ACCESSION_NUMBER]
+            df[target_column] != df.shift().fillna(method="bfill")[target_column]
         )
         df_with_raw_rank = df.assign(
             cumsum_group_index=group_shift_judge.astype(int).cumsum()
         )
-        df_with_raw_rank.loc[:, CUMSUM_GROUP_INDEX] = (
-            df_with_raw_rank.sort_values(
-                by=[INDEX_VAR, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX, EVENT_TIME]
+        df_with_raw_rank = (
+            df_with_raw_rank.assign(
+                tmp_column=df_with_raw_rank.sort_values(
+                    by=index_columns + ["cumsum_group_index"]
+                )
+                .groupby(index_columns)["cumsum_group_index"]
+                .rank("dense")
             )
-            .groupby([INDEX_VAR, ACCESSION_NUMBER])[CUMSUM_GROUP_INDEX]
-            .rank("dense")
-        )
-        df_with_raw_rank = df_with_raw_rank.sort_values(
-            by=[INDEX_VAR, EVENT_TIME, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX]
+            .drop("cumsum_group_index", axis=1)
+            .rename(columns={"tmp_column": rank_column_name})
         )
         return df_with_raw_rank
 
     @classmethod
     def get_question_attempt_duration(cls, df):
         converted_data = (
-            df.groupby([INDEX_VAR, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX])
-            .apply(lambda x: max(x[EVENT_TIME]) - min(x[EVENT_TIME]))
+            df.groupby([INDEX_VAR, ACCESSION_NUMBER, ADJACENT_GROUP_INDEX])[EVENT_TIME]
+            .agg(["min", "max"])
+            .diff(axis=1)
+            .drop("min", axis=1)
+            .rename(columns={"max": DURATION})
             .reset_index()
-            .rename(columns={0: DURATION})
         )
         converted_data[DURATION] = converted_data[DURATION].dt.total_seconds()
         return converted_data
 
     @classmethod
     def get_question_attempt_verb_chain(cls, df):
-        def question_verb_chain(sub_df):
-            group_shift_judge = pd.Series(
-                sub_df[OBSERVABLE] != sub_df.shift().fillna(method="bfill")[OBSERVABLE]
-            )
-            df_with_raw_rank = sub_df.assign(
-                cumsum_group_index=group_shift_judge.astype(int).cumsum()
-            )
-            verb_group = (
-                df_with_raw_rank.groupby(
-                    [OBSERVABLE, "cumsum_group_index"], sort=False
-                )[EVENT_TIME]
-                .count()
-                .reset_index()
-                .rename(columns={EVENT_TIME: "verb_count"})
-            )
-            verb_chain_series = (
-                verb_group["cumsum_group_index"].astype(str)
-                + "_"
-                + verb_group[OBSERVABLE]
-                + "("
-                + verb_group["verb_count"].astype(str)
-                + ")"
-            )
-            return "=>".join(verb_chain_series.to_list())
-
+        sort_index = [
+            INDEX_VAR,
+            ACCESSION_NUMBER,
+            ADJACENT_GROUP_INDEX,
+            VERB_ADJACENT_GROUP_INDEX,
+        ]
+        group_index = sort_index + [OBSERVABLE]
         converted_data = (
-            df.groupby([INDEX_VAR, ACCESSION_NUMBER, CUMSUM_GROUP_INDEX])
-            .apply(question_verb_chain)
-            .reset_index()
-            .rename(columns={0: VERB_CHAIN})
+            df.sort_values(by=sort_index)
+            .groupby(group_index)[EVENT_TIME]
+            .count()
+            .reset_index(level=[OBSERVABLE])
         )
+        converted_data = converted_data.assign(
+            verb_with_times=converted_data[OBSERVABLE]
+            + "("
+            + converted_data[EVENT_TIME].astype(str)
+            + ")"
+        ).drop([OBSERVABLE, EVENT_TIME], axis=1)
+        converted_data = converted_data.groupby(level=[0, 1, 2]).agg(
+            lambda x: x.to_list()
+        )
+        converted_data["verb_with_times"] = converted_data["verb_with_times"].str.join(
+            "=>"
+        )
+        converted_data = converted_data.rename(columns={"verb_with_times": VERB_CHAIN})
         return converted_data
 
     @classmethod
@@ -138,24 +155,22 @@ class FeatureProcessor(object):
         return converted_data.pivot_table(
             values=DURATION,
             index=INDEX_VAR,
-            columns=[converted_data.AccessionNumber, converted_data.cumsum_group_index],
+            columns=[
+                converted_data.AccessionNumber,
+                converted_data[ADJACENT_GROUP_INDEX],
+            ],
         ).fillna(0)
-
-    @classmethod
-    def get_question_parameters(cls, sub_df):
-        valid_record = sub_df[sub_df[DURATION] > 1]
-        valid_attempt_count = valid_record.shape[0]
-        mean = np.mean(valid_record[DURATION]) if not valid_record.empty else 0
-        return pd.Series(
-            [valid_attempt_count, mean],
-            index=["valid_attempt_times", "valid_attempt_mean"],
-        )
 
     @classmethod
     def get_question_parameter(cls, df):
         converted_data = cls.get_question_attempt_duration(df)
-        common_parameters = converted_data.groupby([INDEX_VAR, ACCESSION_NUMBER]).apply(
-            cls.get_question_parameters
+        common_parameters = (
+            converted_data.query(f"{DURATION}>1")
+            .groupby([INDEX_VAR, ACCESSION_NUMBER])[DURATION]
+            .agg(["count", np.mean])
+            .rename(
+                columns={"count": "valid_attempt_times", "mean": "valid_attempt_mean"}
+            )
         )
         return common_parameters.reset_index()
 
@@ -171,13 +186,17 @@ class FeatureProcessor(object):
     @classmethod
     def get_question_verb_chain_features(cls, df):
         question_convert_chain = cls.get_question_attempt_verb_chain(df)
-        return (
-            question_convert_chain.assign(tmp=1)
-            .pivot_table(
-                values=["tmp"], index=INDEX_VAR, columns=[ACCESSION_NUMBER, VERB_CHAIN]
-            )
-            .fillna(0)
+        question_convert_chain = question_convert_chain.reset_index(
+            level=[ADJACENT_GROUP_INDEX, ACCESSION_NUMBER]
         )
+        question_convert_chain = question_convert_chain.assign(
+            verb_chain=question_convert_chain[ACCESSION_NUMBER]
+            + "_"
+            + question_convert_chain[ADJACENT_GROUP_INDEX].astype(str)
+            + "_"
+            + +question_convert_chain[VERB_CHAIN]
+        ).drop(ACCESSION_NUMBER, axis=1)
+        return pd.get_dummies(question_convert_chain).groupby(level=[0]).sum()
 
     @classmethod
     def get_student_parameters(cls, sub_df, all_questions):
