@@ -27,7 +27,7 @@ class BaseModel(ABC):
             feature_df, predict_feature
         )
         self._train_label = label_df
-        self._model = self.classifer()
+        self._model = self.classifier()
 
     def train(self):
         pass
@@ -44,7 +44,7 @@ class BaseModel(ABC):
         pass
 
     @classmethod
-    def classifer(cls):
+    def classifier(cls):
         pass
 
     @classmethod
@@ -71,9 +71,9 @@ class RandForest(BaseModel):
         return result_df
 
     @classmethod
-    def classifer(cls):
+    def classifier(cls):
         return RandomForestClassifier(
-            n_estimators=1000, random_state=0, verbose=1, max_features=0.7
+            n_estimators=5000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
         )
 
     @property

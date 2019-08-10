@@ -25,7 +25,7 @@ VERB_CHAIN = "verb_chain"
 ADJACENT_GROUP_INDEX = "adjacent_group_index"
 VERB_ADJACENT_GROUP_INDEX = "verb_adjacent_group_index"
 DURATION = "Duration"
-
+VERB_DURATION = "verb_duration"
 # verb_map
 
 
@@ -108,7 +108,9 @@ class FeatureProcessor(object):
     @classmethod
     def get_question_attempt_duration(cls, df):
         converted_data = (
-            df.groupby([INDEX_VAR, ACCESSION_NUMBER, ADJACENT_GROUP_INDEX])[EVENT_TIME]
+            df.groupby([INDEX_VAR, ACCESSION_NUMBER, ADJACENT_GROUP_INDEX], sort=False)[
+                EVENT_TIME
+            ]
             .agg(["min", "max"])
             .diff(axis=1)
             .drop("min", axis=1)
@@ -227,7 +229,58 @@ class FeatureProcessor(object):
         )
         return common_parameters
 
+    @classmethod
+    def get_duration_level(cls, df, variance_index, target_column):
+        variance = (
+            df.groupby(variance_index)[target_column]
+            .std(1)
+            .reset_index()
+            .rename(columns={target_column: "duration_variance"})
+        )
+        tmp_var_df = df.merge(variance.reset_index(), on=variance_index, how="left")
+        tmp_verb_duration_level = (
+            tmp_var_df[target_column]
+            .floordiv(tmp_var_df["duration_variance"])
+            .fillna(0)
+        )
+        duration_level_df = df.assign(
+            verb_duration_level=tmp_verb_duration_level.values
+        )
+        return duration_level_df
+
+    @classmethod
+    def get_verb_attempt_duration(cls, df):
+        converted_data = df.assign(shift_date=df[EVENT_TIME].shift(-1))
+        converted_data = converted_data.assign(
+            verb_duration=converted_data["shift_date"] - converted_data[EVENT_TIME]
+        )
+        converted_data[VERB_DURATION] = converted_data[VERB_DURATION].dt.total_seconds()
+        converted_data.loc[
+            ~(df[ACCESSION_NUMBER] == df[ACCESSION_NUMBER].shift(-1)), VERB_DURATION
+        ] = 0
+        converted_data = cls.get_duration_level(
+            converted_data, [INDEX_VAR, ACCESSION_NUMBER], VERB_DURATION
+        )
+        return converted_data
+
+    @classmethod
+    def change_data_to_verb_time_chain(cls, df):
+        """
+        想要获取动作按顺序配合duration分级的动作序列，用于提升纯动作序列的效果
+        TODO: 目前只进行了原始数据获取，数据格式并未进行具体整理。
+        """
+        df.loc[:, "EventTime"] = pd.to_datetime(df.EventTime)
+        df = cls.simple_clean_df(df)
+        df = cls.add_common_attempt_index(df)
+        question_attempt_duration = cls.get_question_attempt_duration(df)
+        question_attempt_duration = cls.get_duration_level(
+            question_attempt_duration, [INDEX_VAR], DURATION
+        )
+        verb_attempt_duration = cls.get_verb_attempt_duration(df)
+        print(question_attempt_duration)
+        print(verb_attempt_duration)
+
 
 if __name__ == "__main__":
     data_a_train_10 = pd.read_csv(os.path.join(DATA_PATH, "data_a_train_10.csv"))
-    FeatureProcessor().change_data_to_feature_df(data_a_train_10)
+    FeatureProcessor().change_data_to_verb_time_chain(data_a_train_10)
