@@ -238,14 +238,12 @@ class FeatureProcessor(object):
             .rename(columns={target_column: "duration_variance"})
         )
         tmp_var_df = df.merge(variance.reset_index(), on=variance_index, how="left")
-        tmp_verb_duration_level = (
+        tmp_duration_level = (
             tmp_var_df[target_column]
             .floordiv(tmp_var_df["duration_variance"])
             .fillna(0)
         )
-        duration_level_df = df.assign(
-            verb_duration_level=tmp_verb_duration_level.values
-        )
+        duration_level_df = df.assign(duration_level=tmp_duration_level.values)
         return duration_level_df
 
     @classmethod
@@ -272,13 +270,24 @@ class FeatureProcessor(object):
         df.loc[:, "EventTime"] = pd.to_datetime(df.EventTime)
         df = cls.simple_clean_df(df)
         df = cls.add_common_attempt_index(df)
-        question_attempt_duration = cls.get_question_attempt_duration(df)
-        question_attempt_duration = cls.get_duration_level(
-            question_attempt_duration, [INDEX_VAR], DURATION
-        )
         verb_attempt_duration = cls.get_verb_attempt_duration(df)
-        print(question_attempt_duration)
-        print(verb_attempt_duration)
+        verb_attempt_duration = verb_attempt_duration.assign(
+            verb_attempt_with_duration_level=verb_attempt_duration[ACCESSION_NUMBER]
+            + "_"
+            + verb_attempt_duration[OBSERVABLE]
+            + "_"
+            + "("
+            + verb_attempt_duration["duration_level"].astype(int).astype(str)
+            + ")"
+        )
+        verb_attempt_chain = verb_attempt_duration.groupby([INDEX_VAR], sort=False)[
+            "verb_attempt_with_duration_level"
+        ].agg(list)
+        max_chain_length = verb_attempt_chain.apply(lambda x: len(x)).max()
+        verb_attempt_chain = verb_attempt_chain.agg(
+            lambda x: x + np.zeros(max_chain_length - len(x), str).tolist()
+        )
+        return verb_attempt_chain
 
 
 if __name__ == "__main__":
