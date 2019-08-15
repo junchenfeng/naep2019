@@ -27,7 +27,6 @@ class BaseModel(metaclass=ABCMeta):
             feature_df, predict_feature
         )
         self._train_label = label_df
-        self._model = self.classifier()
 
     @abstractmethod
     def train(self):
@@ -59,7 +58,32 @@ class BaseModel(metaclass=ABCMeta):
 
 
 class RandForest(BaseModel):
+    def __init__(
+        self,
+        label_df: pd.DataFrame,
+        feature_df: pd.DataFrame,
+        predict_feature: pd.DataFrame,
+    ):
+        super().__init__(label_df, feature_df, predict_feature)
+        self._model = self.classifier(
+            n_estimators=3000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
+        )
+
     def train(self):
+        adj_scores = []
+        min_samples_leaf_list = list(range(1, 100, 10))
+        for min_samples_leaf in min_samples_leaf_list:
+            self._model.min_samples_leaf = min_samples_leaf
+            self._train()
+            adj_scores.append(self.metrics.adj_score)
+        print(adj_scores)
+        best_min_sample_leaf = min_samples_leaf_list[int(np.argmax(adj_scores))]
+        self._model.min_samples_leaf = best_min_sample_leaf
+        self._train()
+        print(f"best score: {self.metrics}")
+        print(f"best max leaf: {best_min_sample_leaf}")
+
+    def _train(self):
         x = self._train_feature.values
         y = self._train_label.astype(int).values
         self._model.fit(x, y)
@@ -75,9 +99,15 @@ class RandForest(BaseModel):
         return result_df
 
     @classmethod
-    def classifier(cls):
+    def classifier(
+        cls, n_estimators=5000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
+    ):
         return RandomForestClassifier(
-            n_estimators=5000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
+            n_estimators=n_estimators,
+            random_state=random_state,
+            verbose=verbose,
+            max_features=max_features,
+            n_jobs=n_jobs,
         )
 
     @property
