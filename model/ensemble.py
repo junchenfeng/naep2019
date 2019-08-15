@@ -66,13 +66,13 @@ class RandForest(BaseModel):
     ):
         super().__init__(label_df, feature_df, predict_feature)
         self._model = self.classifier(
-            n_estimators=100, random_state=0, verbose=1, max_features=0.7, n_jobs=2
+            n_estimators=3000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
         )
 
     def train(self):
 
-        min_samples_leaf_list = list(range(1, 100, 10))
-        max_features_list = np.arange(0.1, 1, 0.1)
+        min_samples_leaf_list = list(range(1, 100, 30))
+        max_features_list = np.arange(0.1, 1, 0.3)
         adj_scores = np.zeros((len(min_samples_leaf_list), len(max_features_list)))
         for min_index, min_samples_leaf in enumerate(min_samples_leaf_list):
             for max_index, max_features in enumerate(max_features_list):
