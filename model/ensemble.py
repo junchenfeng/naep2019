@@ -66,22 +66,29 @@ class RandForest(BaseModel):
     ):
         super().__init__(label_df, feature_df, predict_feature)
         self._model = self.classifier(
-            n_estimators=3000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
+            n_estimators=100, random_state=0, verbose=1, max_features=0.7, n_jobs=2
         )
 
     def train(self):
-        adj_scores = []
+
         min_samples_leaf_list = list(range(1, 100, 10))
-        for min_samples_leaf in min_samples_leaf_list:
-            self._model.min_samples_leaf = min_samples_leaf
-            self._train()
-            adj_scores.append(self.metrics.adj_score)
+        max_features_list = np.arange(0.1, 1, 0.1)
+        adj_scores = np.zeros((len(min_samples_leaf_list), len(max_features_list)))
+        for min_index, min_samples_leaf in enumerate(min_samples_leaf_list):
+            for max_index, max_features in enumerate(max_features_list):
+                self._model.min_samples_leaf = min_samples_leaf
+                self._model.max_features = max_features
+                self._train()
+                adj_scores[min_index, max_index] = self.metrics.adj_score
         print(adj_scores)
-        best_min_sample_leaf = min_samples_leaf_list[int(np.argmax(adj_scores))]
+        best_arg_index = np.unravel_index(np.argmax(adj_scores), adj_scores.shape)
+        best_min_sample_leaf = min_samples_leaf_list[int(best_arg_index[0])]
+        best_max_features_list = max_features_list[int(best_arg_index[1])]
         self._model.min_samples_leaf = best_min_sample_leaf
         self._train()
         print(f"best score: {self.metrics}")
-        print(f"best max leaf: {best_min_sample_leaf}")
+        print(f"best min leaf: {best_min_sample_leaf}")
+        print(f"best max features: {best_max_features_list}")
 
     def _train(self):
         x = self._train_feature.values
