@@ -1,4 +1,4 @@
-from abc import ABC
+from abc import ABCMeta, abstractmethod
 from collections import namedtuple
 
 import pandas as pd
@@ -16,7 +16,7 @@ DEFAULT_VERBOSE = 0
 DEFAULT_N_JOBS = 1
 
 
-class BaseModel(ABC):
+class BaseModel(metaclass=ABCMeta):
     def __init__(
         self,
         label_df: pd.DataFrame,
@@ -29,9 +29,11 @@ class BaseModel(ABC):
         self._train_label = label_df
         self._model = self.classifier()
 
+    @abstractmethod
     def train(self):
         pass
 
+    @abstractmethod
     def predict(self, df: pd.DataFrame):
         pass
 
@@ -40,10 +42,12 @@ class BaseModel(ABC):
         pass
 
     @property
+    @abstractmethod
     def metrics(self):
         pass
 
     @classmethod
+    @abstractmethod
     def classifier(cls):
         pass
 
@@ -84,9 +88,9 @@ class RandForest(BaseModel):
         adj_kappa = max(kappa, 0)
         adj_score = adj_auc + adj_kappa
 
-        return Metrics(auc, kappa, adj_score)
+        return Metrics(adj_auc, adj_kappa, adj_score)
 
-    def _get_model_auc(self) -> float:
+    def _get_model_auc(self) -> np.array:
         x = self._train_feature.values
         y = self._train_label.astype(int).values
         cv_results = cross_val_score(
