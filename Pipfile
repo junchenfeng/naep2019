@@ -12,6 +12,8 @@ numpy = "*"
 numba = "*"
 
 [dev-packages]
+jupyter = "*"
+ipykernel = "*"
 
 [requires]
 python_version = "3.6"
