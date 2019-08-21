@@ -3,7 +3,10 @@ from collections import namedtuple
 
 import pandas as pd
 import numpy as np
+from sklearn.linear_model import SGDClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import AdaBoostClassifier
 from sklearn.metrics import cohen_kappa_score
 from sklearn.model_selection import cross_val_predict, cross_val_score
 
@@ -27,68 +30,24 @@ class BaseModel(metaclass=ABCMeta):
             feature_df, predict_feature
         )
         self._train_label = label_df
+        self._model = self._get_model()
 
     @abstractmethod
-    def train(self):
+    def _get_model(self):
         pass
 
     @abstractmethod
-    def predict(self, df: pd.DataFrame):
+    def train(self):
         pass
 
     @classmethod
     def model(cls):
         pass
 
-    @property
-    @abstractmethod
-    def metrics(self):
-        pass
-
     @classmethod
     @abstractmethod
     def classifier(cls):
         pass
-
-    @classmethod
-    def balance_train_and_hidden(cls, train, hidden):
-        # SORT OF CHEATING!
-        common_columns = set(train.columns) & set(hidden.columns)
-        return train[list(common_columns)], hidden[common_columns]
-
-
-class RandForest(BaseModel):
-    def __init__(
-        self,
-        label_df: pd.DataFrame,
-        feature_df: pd.DataFrame,
-        predict_feature: pd.DataFrame,
-    ):
-        super().__init__(label_df, feature_df, predict_feature)
-        self._model = self.classifier(
-            n_estimators=3000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
-        )
-
-    def train(self):
-
-        min_samples_leaf_list = list(range(1, 100, 30))
-        max_features_list = np.arange(0.1, 1, 0.3)
-        adj_scores = np.zeros((len(min_samples_leaf_list), len(max_features_list)))
-        for min_index, min_samples_leaf in enumerate(min_samples_leaf_list):
-            for max_index, max_features in enumerate(max_features_list):
-                self._model.min_samples_leaf = min_samples_leaf
-                self._model.max_features = max_features
-                self._train()
-                adj_scores[min_index, max_index] = self.metrics.adj_score
-        print(adj_scores)
-        best_arg_index = np.unravel_index(np.argmax(adj_scores), adj_scores.shape)
-        best_min_sample_leaf = min_samples_leaf_list[int(best_arg_index[0])]
-        best_max_features_list = max_features_list[int(best_arg_index[1])]
-        self._model.min_samples_leaf = best_min_sample_leaf
-        self._train()
-        print(f"best score: {self.metrics}")
-        print(f"best min leaf: {best_min_sample_leaf}")
-        print(f"best max features: {best_max_features_list}")
 
     def _train(self):
         x = self._train_feature.values
@@ -106,16 +65,10 @@ class RandForest(BaseModel):
         return result_df
 
     @classmethod
-    def classifier(
-        cls, n_estimators=5000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
-    ):
-        return RandomForestClassifier(
-            n_estimators=n_estimators,
-            random_state=random_state,
-            verbose=verbose,
-            max_features=max_features,
-            n_jobs=n_jobs,
-        )
+    def balance_train_and_hidden(cls, train, hidden):
+        # SORT OF CHEATING!
+        common_columns = set(train.columns) & set(hidden.columns)
+        return train[list(common_columns)], hidden[common_columns]
 
     @property
     def metrics(self):
@@ -140,3 +93,69 @@ class RandForest(BaseModel):
         y = self._train_label.astype(int).values
         y_predict = cross_val_predict(self._model, x, y, cv=DEFAULT_CV)
         return cohen_kappa_score(y, y_predict)
+
+
+class RandForest(BaseModel):
+    def _get_model(self):
+        return self.classifier(
+            n_estimators=3000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
+        )
+
+    def train(self):
+        min_samples_leaf_list = list(range(1, 100, 30))
+        max_features_list = np.arange(0.1, 1, 0.3)
+        adj_scores = np.zeros((len(min_samples_leaf_list), len(max_features_list)))
+        for min_index, min_samples_leaf in enumerate(min_samples_leaf_list):
+            for max_index, max_features in enumerate(max_features_list):
+                self._model.min_samples_leaf = min_samples_leaf
+                self._model.max_features = max_features
+                self._train()
+                adj_scores[min_index, max_index] = self.metrics.adj_score
+        print(adj_scores)
+        best_arg_index = np.unravel_index(np.argmax(adj_scores), adj_scores.shape)
+        best_min_sample_leaf = min_samples_leaf_list[int(best_arg_index[0])]
+        best_max_features_list = max_features_list[int(best_arg_index[1])]
+        self._model.min_samples_leaf = best_min_sample_leaf
+        self._train()
+        print(f"best score: {self.metrics}")
+        print(f"best min leaf: {best_min_sample_leaf}")
+        print(f"best max features: {best_max_features_list}")
+
+    @classmethod
+    def classifier(
+        cls, n_estimators=5000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
+    ):
+        return RandomForestClassifier(
+            n_estimators=n_estimators,
+            random_state=random_state,
+            verbose=verbose,
+            max_features=max_features,
+            n_jobs=n_jobs,
+        )
+
+
+class AdaBoost(BaseModel):
+    def _get_model(self):
+        return self.classifier(n_estimators=3000)
+
+    def train(self):
+        n_estimators = list(range(500, 3000, 500))
+        adj_scores = np.zeros(len(n_estimators))
+        for n_index, n_estimator in enumerate(n_estimators):
+            self._model.n_estimators = n_estimator
+            self._train()
+            adj_scores[n_index] = self.metrics.adj_score
+        print(adj_scores)
+        best_arg_index = np.argmax(adj_scores)
+        best_n_estimators = n_estimators[int(best_arg_index)]
+        self._model.best_n_estimators = best_n_estimators
+        self._train()
+        print(f"best score: {self.metrics}")
+        print(f"best n estimators: {best_n_estimators}")
+
+    @classmethod
+    def classifier(cls, n_estimators=5000):
+        return AdaBoostClassifier(
+            LogisticRegression(solver="lbfgs", max_iter=200, verbose=True, n_jobs=2),
+            n_estimators=n_estimators,
+        )

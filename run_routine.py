@@ -19,7 +19,7 @@ from etl.raw_data import (
 from etl.data_processor import FeatureProcessor, INDEX_VAR
 from etl.response import ITEM_LIST
 from etl.grade import GradePaper
-from model.ensemble import RandForest
+from model.ensemble import RandForest, AdaBoost
 
 
 BATCH_NAME_REF = {
@@ -94,6 +94,10 @@ def model_training(batch_id, model_name: str):
         trained_model = RandForest(
             train_data.iloc[:, -1], train_data.iloc[:, :-1], hidden_feature_df
         )
+    elif model_name == "ada_boost":
+        trained_model = AdaBoost(
+            train_data.iloc[:, -1], train_data.iloc[:, :-1], hidden_feature_df
+        )
     else:
         raise Exception("Unknown model")
 
@@ -142,6 +146,7 @@ def main(model_name: str):
 
 
 if __name__ == "__main__":
-    main("random_forest")
+    # main("random_forest")
+    main("ada_boost")
     # feature_extraction("10", "train")
     # model_training("30", "random_forest")
