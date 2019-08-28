@@ -10,6 +10,8 @@ luigi = "*"
 tqdm = "*"
 numpy = "*"
 numba = "*"
+matplotlib = "*"
+tensorflow = "*"
 
 [dev-packages]
 jupyter = "*"

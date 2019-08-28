@@ -2,6 +2,7 @@ import os
 
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import LabelEncoder
 
 from etl.raw_data import DATA_PATH
 
@@ -19,7 +20,32 @@ EOS_TIME_LFT = "EOSTimeLft"
 HELP_MAT_8 = "HELPMAT8"
 SEC_TIME_OUT = "SecTimeOut"
 VERB_CHAIN = "verb_chain"
-
+VERB_MAP = {
+    "Calculator Buffer": "Calculator",
+    "Open Calculator": "Calculator",
+    "Close Calculator": "Calculator",
+    "Move Calculator": "Calculator",
+    "Clear Scratchwork": "Scratchwork",
+    "Scratchwork Draw Mode On": "Scratchwork",
+    "Draw": "Scratchwork",
+    "Erase": "Scratchwork",
+    "Scratchwork Erase Mode On": "Scratchwork",
+    "Scratchwork Highlight Mode On": "Scratchwork",
+    "Scratchwork Mode Off": "Scratchwork",
+    "Scratchwork Mode On": "Scratchwork",
+    "Show Timer": "Timer",
+    "Hide Timer": "Timer",
+    "Vertical Item Scroll": "Scroll",
+    "Horizontal Item Scroll": "Scroll",
+    "Open Equation Editor": "Equation Editor",
+    "Equation Editor Button": "Equation Editor",
+    "Close Equation Editor": "Equation Editor",
+    "Change Theme": "Theme",
+    "Decrease Zoom": "Zoom",
+    "Increase Zoom": "Zoom",
+    "First Text Change": "Text Change",
+    "Last Text Change": "Text Change",
+}
 
 # custom constants
 ADJACENT_GROUP_INDEX = "adjacent_group_index"
@@ -94,11 +120,11 @@ class FeatureProcessor(object):
         )
         df_with_raw_rank = (
             df_with_raw_rank.assign(
-                tmp_column=df_with_raw_rank.sort_values(
-                    by=index_columns + ["cumsum_group_index"]
-                )
-                .groupby(index_columns)["cumsum_group_index"]
+                tmp_column=df_with_raw_rank.groupby(index_columns, sort=False)[
+                    "cumsum_group_index"
+                ]
                 .rank("dense")
+                .values
             )
             .drop("cumsum_group_index", axis=1)
             .rename(columns={"tmp_column": rank_column_name})
@@ -262,15 +288,29 @@ class FeatureProcessor(object):
         return converted_data
 
     @classmethod
+    def add_time_n_sigma(cls, df):
+        df.loc[:, "EventTime"] = pd.to_datetime(df.EventTime)
+        df = cls.simple_clean_df(df)
+        df = cls.add_common_attempt_index(df)
+        df = df.groupby(
+            [
+                "STUDENTID",
+                ACCESSION_NUMBER,
+                "ItemType",
+                "adjacent_group_index",
+                "verb_adjacent_group_index",
+            ],
+            sort=False,
+        ).head(1)
+        return cls.get_verb_attempt_duration(df)
+
+    @classmethod
     def change_data_to_verb_time_chain(cls, df):
         """
         想要获取动作按顺序配合duration分级的动作序列，用于提升纯动作序列的效果
         TODO: 目前只进行了原始数据获取，数据格式并未进行具体整理。
         """
-        df.loc[:, "EventTime"] = pd.to_datetime(df.EventTime)
-        df = cls.simple_clean_df(df)
-        df = cls.add_common_attempt_index(df)
-        verb_attempt_duration = cls.get_verb_attempt_duration(df)
+        verb_attempt_duration = cls.add_time_n_sigma(df)
         verb_attempt_duration = verb_attempt_duration.assign(
             verb_attempt_with_duration_level=verb_attempt_duration[ACCESSION_NUMBER]
             + "_"
@@ -287,9 +327,91 @@ class FeatureProcessor(object):
         verb_attempt_chain = verb_attempt_chain.agg(
             lambda x: x + np.zeros(max_chain_length - len(x), str).tolist()
         )
-        return verb_attempt_chain
+        return (
+            verb_attempt_chain.apply(pd.Series)
+            .stack()
+            .reset_index()
+            .drop("level_1", axis=1)
+            .rename(columns={0: "verbs"})
+        )
+
+    def get_verb_time_chain_pivot(self, df, ln):
+        raw_data = self.change_data_to_verb_time_chain(df)
+        raw_data["verbs"] = ln.transform(raw_data["verbs"])
+        raw_data = raw_data.assign(
+            verb_index=raw_data.reset_index()
+            .groupby("STUDENTID", sort=False)["index"]
+            .rank("min")
+        )
+        pivot_table = raw_data.pivot_table(
+            values="verbs", index="STUDENTID", columns="verb_index"
+        )
+        return pivot_table
+
+    @classmethod
+    def get_multi_dim_verb(cls, df, question_type_ln, verb_ln):
+        df[OBSERVABLE] = df[OBSERVABLE].apply(
+            lambda x: VERB_MAP[x] if x in VERB_MAP else x
+        )
+        verb_attempt_duration = cls.add_time_n_sigma(df)
+        verb_attempt_duration["duration_level"] = (
+            verb_attempt_duration["duration_level"] + 1
+        )
+        max_chain_length = (
+            verb_attempt_duration.groupby([INDEX_VAR], sort=False)
+            .agg(
+                {"Observable": "count", "ItemType": "count", "duration_level": "count"}
+            )
+            .max()
+            .max()
+        )
+        verb_attempt_duration["Observable"] = verb_ln.transform(
+            verb_attempt_duration["Observable"]
+        ) + 1
+        verb_attempt_duration["ItemType"] = question_type_ln.transform(
+            verb_attempt_duration["ItemType"]
+        ) + 1
+        verb_attempt_chain = verb_attempt_duration.groupby([INDEX_VAR], sort=False).agg(
+            {"Observable": list, "ItemType": list, "duration_level": list}
+        )
+        verb_attempt_chain["Observable"] = verb_attempt_chain["Observable"].agg(
+            lambda x: x + np.zeros(max_chain_length - len(x)).tolist()
+        )
+        verb_attempt_chain["ItemType"] = verb_attempt_chain["ItemType"].agg(
+            lambda x: x + np.zeros(max_chain_length - len(x)).tolist()
+        )
+        verb_attempt_chain["duration_level"] = verb_attempt_chain["duration_level"].agg(
+            lambda x: x + np.zeros(max_chain_length - len(x)).tolist()
+        )
+        # 第一维度学生，第二维度时间步，第三维度，特征
+        time_step_array = np.transpose(
+            np.concatenate(
+                verb_attempt_chain.apply(lambda x: list(x), axis=1).values
+            ).reshape((verb_attempt_chain.shape[0], 3, max_chain_length)),
+            (0, 2, 1),
+        )
+        return verb_attempt_chain.index, time_step_array
 
 
 if __name__ == "__main__":
-    data_a_train_10 = pd.read_csv(os.path.join(DATA_PATH, "data_a_train_10.csv"))
-    FeatureProcessor().change_data_to_verb_time_chain(data_a_train_10)
+    data_a_hidden = pd.concat(
+        [
+            pd.read_csv(os.path.join(DATA_PATH, "data_a_hidden_10.csv")),
+            pd.read_csv(os.path.join(DATA_PATH, "data_a_hidden_20.csv")),
+            pd.read_csv(os.path.join(DATA_PATH, "data_a_hidden_30.csv")),
+        ],
+        axis=0,
+        sort=False,
+    )
+    data_a_hidden[OBSERVABLE] = data_a_hidden[OBSERVABLE].apply(
+        lambda x: VERB_MAP[x] if x in VERB_MAP else x
+    )
+    tmp_question_type_ln = LabelEncoder()
+    tmp_verb_ln = LabelEncoder()
+    tmp_verb_ln.fit(data_a_hidden["Observable"])
+    tmp_question_type_ln.fit(data_a_hidden["ItemType"])
+    train_verb_chain = FeatureProcessor().get_multi_dim_verb(
+        data_a_hidden, tmp_question_type_ln, tmp_verb_ln
+    )
+
+    print("x")
