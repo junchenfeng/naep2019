@@ -1,5 +1,6 @@
 import os
 
+import json
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
@@ -256,14 +257,17 @@ class FeatureProcessor(object):
         return common_parameters
 
     @classmethod
-    def get_duration_level(cls, df, variance_index, target_column):
-        variance = (
-            df.groupby(variance_index)[target_column]
-            .std(1)
-            .reset_index()
-            .rename(columns={target_column: "duration_variance"})
-        )
-        tmp_var_df = df.merge(variance.reset_index(), on=variance_index, how="left")
+    def add_duration_level(cls, df, variance_index, target_column):
+        if variance_index:
+            variance = (
+                (df.groupby(variance_index, sort=False)[target_column].std(1) / 10)
+                .reset_index()
+                .rename(columns={target_column: "duration_variance"})
+            )
+            tmp_var_df = df.merge(variance.reset_index(), on=variance_index, how="left")
+        else:
+            variance = df[target_column].std() / 2000
+            tmp_var_df = df.assign(duration_variance=variance)
         tmp_duration_level = (
             tmp_var_df[target_column]
             .floordiv(tmp_var_df["duration_variance"])
@@ -273,7 +277,7 @@ class FeatureProcessor(object):
         return duration_level_df
 
     @classmethod
-    def get_verb_attempt_duration(cls, df):
+    def add_verb_attempt_duration(cls, df):
         converted_data = df.assign(shift_date=df[EVENT_TIME].shift(-1))
         converted_data = converted_data.assign(
             verb_duration=converted_data["shift_date"] - converted_data[EVENT_TIME]
@@ -282,16 +286,26 @@ class FeatureProcessor(object):
         converted_data.loc[
             ~(df[ACCESSION_NUMBER] == df[ACCESSION_NUMBER].shift(-1)), VERB_DURATION
         ] = 0
-        converted_data = cls.get_duration_level(
-            converted_data, [INDEX_VAR, ACCESSION_NUMBER], VERB_DURATION
+        return converted_data.drop("shift_date", axis=1)
+
+    @classmethod
+    def add_verb_occur_minute(cls, df):
+        start_time_df = df.groupby("STUDENTID", sort=False, as_index=False)[
+            "EventTime"
+        ].agg(np.min)
+        df = df.merge(start_time_df, how="left", on="STUDENTID")
+        verb_occur_minute_series = (
+            (df[f"{EVENT_TIME}_x"] - df[f"{EVENT_TIME}_y"]).dt.seconds / 60
+        ).astype(int)
+        df = (
+            df.assign(occur_minute=verb_occur_minute_series.values)
+            .drop(f"{EVENT_TIME}_y", axis=1)
+            .rename(columns={f"{EVENT_TIME}_x": EVENT_TIME})
         )
-        return converted_data
+        return df
 
     @classmethod
     def add_time_n_sigma(cls, df):
-        df.loc[:, "EventTime"] = pd.to_datetime(df.EventTime)
-        df = cls.simple_clean_df(df)
-        df = cls.add_common_attempt_index(df)
         df = df.groupby(
             [
                 "STUDENTID",
@@ -302,7 +316,7 @@ class FeatureProcessor(object):
             ],
             sort=False,
         ).head(1)
-        return cls.get_verb_attempt_duration(df)
+        return cls.add_verb_attempt_duration(df)
 
     @classmethod
     def change_data_to_verb_time_chain(cls, df):
@@ -349,48 +363,66 @@ class FeatureProcessor(object):
         return pivot_table
 
     @classmethod
-    def get_multi_dim_verb(cls, df, question_type_ln, verb_ln):
+    def get_multi_dim_verb(cls, df):
         df[OBSERVABLE] = df[OBSERVABLE].apply(
             lambda x: VERB_MAP[x] if x in VERB_MAP else x
         )
-        verb_attempt_duration = cls.add_time_n_sigma(df)
-        verb_attempt_duration["duration_level"] = (
-            verb_attempt_duration["duration_level"] + 1
+        df.loc[:, "EventTime"] = pd.to_datetime(df.EventTime)
+        # 此df在原始数据基础上添加题目进入序号，动作序号，动作duration, 动作duration_level, 时间occur_minute, 动作在每个题目中的duration_level
+        middle_df = (
+            df.pipe(cls.simple_clean_df)
+            .pipe(cls.add_common_attempt_index)
+            .pipe(cls.add_verb_occur_minute)
+            .pipe(cls.add_verb_attempt_duration)
+            .pipe(cls.add_duration_level, None, VERB_DURATION)
         )
-        max_chain_length = (
-            verb_attempt_duration.groupby([INDEX_VAR], sort=False)
-            .agg(
-                {"Observable": "count", "ItemType": "count", "duration_level": "count"}
-            )
-            .max()
-            .max()
+        verb_attempt_chain = middle_df.groupby(
+            [INDEX_VAR, "occur_minute"], sort=False
+        ).agg({"Observable": list, "ItemType": list, "duration_level": "sum"})
+        verb_attempt_chain = verb_attempt_chain.assign(
+            verb_count=verb_attempt_chain["Observable"].agg(lambda x: len(x)),
+            unique_verb_count=verb_attempt_chain["Observable"].agg(
+                lambda x: len(set(x))
+            ),
+            unique_verb_chain=verb_attempt_chain["Observable"].agg(
+                lambda x: json.dumps(sorted(list((set(x)))))
+            ),
         )
-        verb_attempt_duration["Observable"] = verb_ln.transform(
-            verb_attempt_duration["Observable"]
-        ) + 1
-        verb_attempt_duration["ItemType"] = question_type_ln.transform(
-            verb_attempt_duration["ItemType"]
-        ) + 1
-        verb_attempt_chain = verb_attempt_duration.groupby([INDEX_VAR], sort=False).agg(
-            {"Observable": list, "ItemType": list, "duration_level": list}
+        useful_df = verb_attempt_chain.iloc[:, 2:].reset_index()
+        unique_student = useful_df[INDEX_VAR].unique()
+        full_occur_minute = list(range(useful_df["occur_minute"].max() + 1))
+        full_index = pd.DataFrame(
+            {
+                INDEX_VAR: np.repeat(unique_student, len(full_occur_minute)),
+                "occur_minute": np.tile(full_occur_minute, len(unique_student)),
+            }
         )
-        verb_attempt_chain["Observable"] = verb_attempt_chain["Observable"].agg(
-            lambda x: x + np.zeros(max_chain_length - len(x)).tolist()
+        full_df = full_index.merge(
+            useful_df, on=[INDEX_VAR, "occur_minute"], how="left"
         )
-        verb_attempt_chain["ItemType"] = verb_attempt_chain["ItemType"].agg(
-            lambda x: x + np.zeros(max_chain_length - len(x)).tolist()
+        full_df = full_df.fillna(0)
+        full_df["unique_verb_chain"] = full_df["unique_verb_chain"].astype(str)
+        duration_level_array = full_df["duration_level"].values.reshape(
+            len(unique_student), len(full_occur_minute), 1
         )
-        verb_attempt_chain["duration_level"] = verb_attempt_chain["duration_level"].agg(
-            lambda x: x + np.zeros(max_chain_length - len(x)).tolist()
+        verb_count_array = full_df["verb_count"].values.reshape(
+            len(unique_student), len(full_occur_minute), 1
         )
-        # 第一维度学生，第二维度时间步，第三维度，特征
-        time_step_array = np.transpose(
-            np.concatenate(
-                verb_attempt_chain.apply(lambda x: list(x), axis=1).values
-            ).reshape((verb_attempt_chain.shape[0], 3, max_chain_length)),
-            (0, 2, 1),
+        unique_verb_count_array = full_df["unique_verb_count"].values.reshape(
+            len(unique_student), len(full_occur_minute), 1
         )
-        return verb_attempt_chain.index, time_step_array
+        unique_verb_chain_array = full_df["unique_verb_chain"].values.reshape(
+            len(unique_student), len(full_occur_minute), 1
+        )
+        return (
+            useful_df[INDEX_VAR].unique(),
+            np.concatenate([
+                duration_level_array,
+                verb_count_array,
+                unique_verb_count_array,
+                unique_verb_chain_array,
+            ], axis=2),
+        )
 
 
 if __name__ == "__main__":
@@ -411,7 +443,7 @@ if __name__ == "__main__":
     tmp_verb_ln.fit(data_a_hidden["Observable"])
     tmp_question_type_ln.fit(data_a_hidden["ItemType"])
     train_verb_chain = FeatureProcessor().get_multi_dim_verb(
-        data_a_hidden, tmp_question_type_ln, tmp_verb_ln
+        data_a_hidden
     )
 
     print("x")
