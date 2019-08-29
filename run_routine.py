@@ -17,7 +17,7 @@ from etl.raw_data import (
     DATA_PATH,
 )
 from etl.data_processor import FeatureProcessor, INDEX_VAR
-from etl.response import ITEM_LIST
+from constant import ITEM_LIST
 from etl.grade import GradePaper
 from model.ensemble import RandForest, AdaBoost
 
@@ -51,12 +51,12 @@ def feature_extraction(batch_id: str, task_name: str):
     :param task_name: train or hidden
     :return:
     """
-
+    """
     all_paper_df = pd.read_csv(
         GradePaper(batch_id=batch_id, task=task_name).output().path
     ).set_index("sid")
     if batch_id == "10":
-        paper_df = all_paper_df.loc[:, ITEM_LIST[:9]]
+        paper_df = all_paper_df.loc[:, ITEM_LIST[:8]]
     elif batch_id == "20":
         paper_df = all_paper_df.loc[:, ITEM_LIST[:15]]
     else:
@@ -64,7 +64,7 @@ def feature_extraction(batch_id: str, task_name: str):
 
     enc = OneHotEncoder(handle_unknown="ignore")
     enc.fit(paper_df)
-    discrete_paper_df = pd.DataFrame(
+    final_paper_df = pd.DataFrame(
         enc.transform(paper_df).toarray(),
         index=paper_df.index.tolist(),
         columns=enc.get_feature_names(),
@@ -74,8 +74,12 @@ def feature_extraction(batch_id: str, task_name: str):
     feature_df = FeatureProcessor().change_data_to_feature_df(df)  # time
 
     all_feature = pd.merge(
-        feature_df, discrete_paper_df, left_index=True, right_index=True, how="left"
+        feature_df, final_paper_df, left_index=True, right_index=True, how="left"
     )
+    """
+    df = pd.read_csv(os.path.join(DATA_PATH, BATCH_NAME_REF[batch_id][task_name]))
+    feature_df = FeatureProcessor().change_data_to_feature_df(df)  # time
+    all_feature = feature_df
 
     return all_feature
 
@@ -147,6 +151,6 @@ def main(model_name: str):
 
 if __name__ == "__main__":
     # main("random_forest")
-    main("ada_boost")
-    # feature_extraction("10", "train")
-    # model_training("30", "random_forest")
+    # main("ada_boost")
+    feature_extraction("10", "train")
+    # model_training("10", "random_forest")

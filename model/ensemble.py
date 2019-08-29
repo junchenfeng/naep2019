@@ -111,15 +111,18 @@ class RandForest(BaseModel):
                 self._model.max_features = max_features
                 self._train()
                 adj_scores[min_index, max_index] = self.metrics.adj_score
-        print(adj_scores)
+                print(f"samples_leaf {min_samples_leaf}, max_features {max_features}, score {self.metrics.adj_score}")
         best_arg_index = np.unravel_index(np.argmax(adj_scores), adj_scores.shape)
         best_min_sample_leaf = min_samples_leaf_list[int(best_arg_index[0])]
-        best_max_features_list = max_features_list[int(best_arg_index[1])]
+        best_max_features = max_features_list[int(best_arg_index[1])]
+
+        # set optimal and train again
         self._model.min_samples_leaf = best_min_sample_leaf
+        self._model.max_features = best_max_features
         self._train()
         print(f"best score: {self.metrics}")
         print(f"best min leaf: {best_min_sample_leaf}")
-        print(f"best max features: {best_max_features_list}")
+        print(f"best max features: {best_max_features}")
 
     @classmethod
     def classifier(

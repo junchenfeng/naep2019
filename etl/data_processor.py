@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 
 from etl.raw_data import DATA_PATH
+from constant import ITEM_LIST
 
 MID_PATH = "data/mid"
 TIME_PERIOD_DF_NAME = "time_period_df.csv"
@@ -25,8 +26,8 @@ VERB_CHAIN = "verb_chain"
 ADJACENT_GROUP_INDEX = "adjacent_group_index"
 VERB_ADJACENT_GROUP_INDEX = "verb_adjacent_group_index"
 DURATION = "Duration"
+SCALE_DURATION = "SCALED_DURATION"
 VERB_DURATION = "verb_duration"
-# verb_map
 
 
 class FeatureProcessor(object):
@@ -34,20 +35,29 @@ class FeatureProcessor(object):
     def change_data_to_feature_df(cls, df):
         df.loc[:, "EventTime"] = pd.to_datetime(df.EventTime)
         df = cls.simple_clean_df(df)
+        # common attempt = repeated verb in the same attempt of an item
         df = cls.add_common_attempt_index(df)
         question_duration_features = cls.get_question_attempt_duration_features(
             df
-        ).add_prefix("x_")
+        ).add_prefix(
+            "x_"
+        )  # The duration of each attempt for each item
 
         question_common_parameter_features = cls.get_question_common_parameter_features(
             df
-        ).add_prefix("y_")
+        ).add_prefix(
+            "y_"
+        )  # aggregate stats of attempt durations for each item
         student_common_parameter_features = cls.get_student_common_parameter_features(
             df
-        ).add_prefix("z_")
+        ).add_prefix(
+            "z_"
+        )  # aggregate stats of student answer time
         question_verb_chain_features = cls.get_question_verb_chain_features(
             df
-        ).add_prefix("m_")
+        ).add_prefix(
+            "m_"
+        )  # verb stream of student attempt
         return pd.concat(
             [
                 question_verb_chain_features,
@@ -60,6 +70,7 @@ class FeatureProcessor(object):
 
     @classmethod
     def simple_clean_df(cls, df):
+        # TODO: keep the click progress navigator in the feature set.
         return df.query(
             f"({OBSERVABLE} != '{CLICK_PROGRESS_NAVIGATOR}') & "
             f"({ACCESSION_NUMBER} != '{BLOCK_REV}') &"
@@ -86,6 +97,7 @@ class FeatureProcessor(object):
 
     @classmethod
     def get_adjacent_index(cls, df, target_column, index_columns, rank_column_name):
+        # Detect if the item changes. In simple clean step, the confounding navigator has been deleted
         group_shift_judge = pd.Series(
             df[target_column] != df.shift().fillna(method="bfill")[target_column]
         )
@@ -94,11 +106,9 @@ class FeatureProcessor(object):
         )
         df_with_raw_rank = (
             df_with_raw_rank.assign(
-                tmp_column=df_with_raw_rank.sort_values(
-                    by=index_columns + ["cumsum_group_index"]
-                )
-                .groupby(index_columns)["cumsum_group_index"]
-                .rank("dense")
+                tmp_column=df_with_raw_rank.groupby(index_columns)[
+                    "cumsum_group_index"
+                ].rank("dense")
             )
             .drop("cumsum_group_index", axis=1)
             .rename(columns={"tmp_column": rank_column_name})
@@ -134,20 +144,36 @@ class FeatureProcessor(object):
             .groupby(group_index)[EVENT_TIME]
             .count()
             .reset_index(level=[OBSERVABLE])
+        ).drop(EVENT_TIME, axis=1)
+        group_data = converted_data.groupby(level=[0, 1, 2]).agg(
+            lambda x: ",".join(sorted((set(x.to_list()))))
         )
-        converted_data = converted_data.assign(
-            verb_with_times=converted_data[OBSERVABLE]
-            + "("
-            + converted_data[EVENT_TIME].astype(str)
-            + ")"
-        ).drop([OBSERVABLE, EVENT_TIME], axis=1)
-        converted_data = converted_data.groupby(level=[0, 1, 2]).agg(
-            lambda x: x.to_list()
+        g = (
+            group_data.reset_index()
+            .groupby([ACCESSION_NUMBER, OBSERVABLE], group_keys=False)
+            .count()["STUDENTID"]
+            .groupby(level=0, group_keys=False)
         )
-        converted_data["verb_with_times"] = converted_data["verb_with_times"].str.join(
-            "=>"
+        valid_item_verb = (
+            g.apply(lambda x: x.sort_values(ascending=False).head(10))
+            .reset_index()
+            .query("STUDENTID>20")
+            .drop("STUDENTID", axis=1)
+            .assign(valid=True)
+        )  # take top 10 of each verbs and requires it to have at least 20 occurance.
+        merged_verb_chain = pd.merge(
+            group_data.reset_index(),
+            valid_item_verb,
+            left_on=["AccessionNumber", "Observable"],
+            right_on=["AccessionNumber", "Observable"],
+            how="left",
         )
-        converted_data = converted_data.rename(columns={"verb_with_times": VERB_CHAIN})
+        merged_verb_chain.loc[
+            merged_verb_chain["valid"].isnull(), "Observable"
+        ] = "OtherActions"
+        converted_data = merged_verb_chain.drop(["valid"], axis=1).rename(
+            columns={OBSERVABLE: VERB_CHAIN}
+        )
         return converted_data
 
     @classmethod
@@ -167,65 +193,91 @@ class FeatureProcessor(object):
     def get_question_parameter(cls, df):
         converted_data = cls.get_question_attempt_duration(df)
         common_parameters = (
-            converted_data.query(f"{DURATION}>1")
-            .groupby([INDEX_VAR, ACCESSION_NUMBER])[DURATION]
-            .agg(["count", np.mean])
+            converted_data.groupby([INDEX_VAR, ACCESSION_NUMBER])[DURATION]
+            .agg(["count", np.mean, np.min])
             .rename(
-                columns={"count": "valid_attempt_times", "mean": "valid_attempt_mean"}
+                columns={
+                    "count": "attempt_times",
+                    "mean": "attempt_mean_time",
+                    "amin": "attempt_min_time",
+                }
             )
         )
         return common_parameters.reset_index()
 
     @classmethod
     def get_question_common_parameter_features(cls, df):
+        # 学生+题目纬度的尝试次数、平均答题时间和最小答题时间
         question_common_parameters = cls.get_question_parameter(df)
         return question_common_parameters.pivot_table(
-            values=["valid_attempt_times", "valid_attempt_mean"],
+            values=["attempt_times", "attempt_mean_time", "attempt_min_time"],
             index=INDEX_VAR,
             columns=ACCESSION_NUMBER,
         ).fillna(0)
 
     @classmethod
     def get_question_verb_chain_features(cls, df):
+        # 将学生每次做答的行为流所涉及的行为类别作为特征
         question_convert_chain = cls.get_question_attempt_verb_chain(df)
-        question_convert_chain = question_convert_chain.reset_index(
-            level=[ADJACENT_GROUP_INDEX, ACCESSION_NUMBER]
-        )
         question_convert_chain = question_convert_chain.assign(
             verb_chain=question_convert_chain[ACCESSION_NUMBER]
             + "_"
             + question_convert_chain[ADJACENT_GROUP_INDEX].astype(str)
             + "_"
-            + +question_convert_chain[VERB_CHAIN]
-        ).drop(ACCESSION_NUMBER, axis=1)
-        return pd.get_dummies(question_convert_chain).groupby(level=[0]).sum()
+            + question_convert_chain[VERB_CHAIN]
+        ).drop([ACCESSION_NUMBER, ADJACENT_GROUP_INDEX], axis=1)
+        verb_feature = pd.get_dummies(question_convert_chain).groupby("STUDENTID").sum()
+        filtered_verb_feature = verb_feature.drop(
+            verb_feature.columns[verb_feature.sum() < 10], axis=1
+        )  # 因为还有一次尝试次数的拼接，稀释了常见动作的频率，因此需要再清洗一次
+        return filtered_verb_feature
 
     @classmethod
-    def get_student_parameters(cls, sub_df, all_questions):
-        valid_record = sub_df[sub_df[DURATION] > 1]
-        all_question_count = all_questions.shape[0]
+    def get_student_parameters(cls, sub_df):
+        # 获取学生的平均答题数据
+        valid_record = sub_df[sub_df[SCALE_DURATION] > -1.5]  # 如果尝试时间比1.5个标准差小，定义为无效尝试
+        all_question_count = len(ITEM_LIST)
         valid_question_attempt_percent = (
             valid_record[ACCESSION_NUMBER].drop_duplicates().shape[0]
             / all_question_count
         )
-        mean = np.mean(valid_record[DURATION]) if not valid_record.empty else 0
-        std = np.std(valid_record[DURATION], ddof=1)
+        mean = np.mean(sub_df[DURATION])  # natural time
+        std = np.std(sub_df[DURATION], ddof=1)
+        scaled_mean = np.mean(sub_df[SCALE_DURATION])  # scaled time compared to peers
+        scaled_std = np.std(sub_df[SCALE_DURATION])
         return pd.Series(
-            [valid_question_attempt_percent, mean, std],
+            [valid_question_attempt_percent, mean, std, scaled_mean, scaled_std],
             index=[
                 "valid_question_attempt_percent",
-                "valid_question_attempt_mean",
-                "valid_question_attempt_std",
+                "question_attempt_mean_time",
+                "question_attempt_std_time",
+                "scaled_question_attempt_mean_time",
+                "scaled_question_attempt_std_time",
             ],
         )
 
     @classmethod
     def get_student_common_parameter_features(cls, df):
+        """
+        学生纬度答题的有效尝试比例、平均答题时间、平均答题时间标准差、平均标准化答题时间、平均标准化答题时间
+        """
+        # 首先仅提取有效题目数据
+        df = df[df[ACCESSION_NUMBER].isin(ITEM_LIST)]
 
-        all_questions = df[ACCESSION_NUMBER].drop_duplicates()
         converted_data = cls.get_question_attempt_duration(df)
+        converted_data[SCALE_DURATION] = 0
+        # demean and standardize
+        # TODO: use the same scaler to transform hidden data
+        for question in ITEM_LIST:
+            duration_data = converted_data[
+                converted_data[ACCESSION_NUMBER] == question
+            ]["Duration"]
+            converted_data.loc[
+                converted_data[ACCESSION_NUMBER] == question, SCALE_DURATION
+            ] = (duration_data - duration_data.mean()) / duration_data.std()
+
         common_parameters = converted_data.groupby([INDEX_VAR]).apply(
-            cls.get_student_parameters, all_questions
+            cls.get_student_parameters
         )
         return common_parameters
 
@@ -261,35 +313,6 @@ class FeatureProcessor(object):
         )
         return converted_data
 
-    @classmethod
-    def change_data_to_verb_time_chain(cls, df):
-        """
-        想要获取动作按顺序配合duration分级的动作序列，用于提升纯动作序列的效果
-        TODO: 目前只进行了原始数据获取，数据格式并未进行具体整理。
-        """
-        df.loc[:, "EventTime"] = pd.to_datetime(df.EventTime)
-        df = cls.simple_clean_df(df)
-        df = cls.add_common_attempt_index(df)
-        verb_attempt_duration = cls.get_verb_attempt_duration(df)
-        verb_attempt_duration = verb_attempt_duration.assign(
-            verb_attempt_with_duration_level=verb_attempt_duration[ACCESSION_NUMBER]
-            + "_"
-            + verb_attempt_duration[OBSERVABLE]
-            + "_"
-            + "("
-            + verb_attempt_duration["duration_level"].astype(int).astype(str)
-            + ")"
-        )
-        verb_attempt_chain = verb_attempt_duration.groupby([INDEX_VAR], sort=False)[
-            "verb_attempt_with_duration_level"
-        ].agg(list)
-        max_chain_length = verb_attempt_chain.apply(lambda x: len(x)).max()
-        verb_attempt_chain = verb_attempt_chain.agg(
-            lambda x: x + np.zeros(max_chain_length - len(x), str).tolist()
-        )
-        return verb_attempt_chain
-
 
 if __name__ == "__main__":
     data_a_train_10 = pd.read_csv(os.path.join(DATA_PATH, "data_a_train_10.csv"))
-    FeatureProcessor().change_data_to_verb_time_chain(data_a_train_10)

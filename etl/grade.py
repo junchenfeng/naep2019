@@ -1,10 +1,8 @@
-import json
-
 import luigi
 import pandas as pd
 
-from etl.response import ConvertStream2Response, ITEM_LIST, ITEM_REPO
-from etl.util import NOT_DONE, NO_ANS
+from etl.response import ConvertStream2Response, ITEM_REPO
+from constant import ITEM_LIST, NOT_DONE, NO_ANS
 
 
 """
