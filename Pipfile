@@ -1,7 +1,6 @@
 [[source]]
-url = "https://pypi.org/simple"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
 verify_ssl = true
-name = "pypi"
 
 [packages]
 scikit-learn = "*"
@@ -9,9 +8,10 @@ pandas = "*"
 luigi = "*"
 tqdm = "*"
 numpy = "*"
-numba = "*"
+statsmodels = "*"
 
 [dev-packages]
+plotly = "*"
 
 [requires]
 python_version = "3.6"

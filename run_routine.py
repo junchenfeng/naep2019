@@ -2,7 +2,7 @@ import os
 import pickle
 
 import pandas as pd
-from sklearn.preprocessing import OneHotEncoder
+
 
 from constant import TASK_TRAIN, TASK_HIDDEN
 from etl.raw_data import (
@@ -16,10 +16,8 @@ from etl.raw_data import (
     HIDDEN_LABEL_FILE_NAME,
     DATA_PATH,
 )
-from etl.data_processor import FeatureProcessor, INDEX_VAR
-from etl.response import ITEM_LIST
-from etl.grade import GradePaper
-from model.ensemble import RandForest, AdaBoost
+from etl.data_processor import TimeFeatureProcessor, BehaviorFeatureProcessor, INDEX_VAR
+from model.ensemble import RandForest
 
 
 BATCH_NAME_REF = {
@@ -45,38 +43,9 @@ if not os.path.exists(RESULT_DIR):
 
 
 def feature_extraction(batch_id: str, task_name: str):
-    """
-
-    :param batch_id: 10, 20 or 30
-    :param task_name: train or hidden
-    :return:
-    """
-
-    all_paper_df = pd.read_csv(
-        GradePaper(batch_id=batch_id, task=task_name).output().path
-    ).set_index("sid")
-    if batch_id == "10":
-        paper_df = all_paper_df.loc[:, ITEM_LIST[:9]]
-    elif batch_id == "20":
-        paper_df = all_paper_df.loc[:, ITEM_LIST[:15]]
-    else:
-        paper_df = all_paper_df.loc[:, ITEM_LIST]
-
-    enc = OneHotEncoder(handle_unknown="ignore")
-    enc.fit(paper_df)
-    discrete_paper_df = pd.DataFrame(
-        enc.transform(paper_df).toarray(),
-        index=paper_df.index.tolist(),
-        columns=enc.get_feature_names(),
-    )
-
     df = pd.read_csv(os.path.join(DATA_PATH, BATCH_NAME_REF[batch_id][task_name]))
-    feature_df = FeatureProcessor().change_data_to_feature_df(df)  # time
-
-    all_feature = pd.merge(
-        feature_df, discrete_paper_df, left_index=True, right_index=True, how="left"
-    )
-
+    time_feature_df = TimeFeatureProcessor().change_data_to_feature_df(df)  # time
+    all_feature = time_feature_df
     return all_feature
 
 
@@ -94,10 +63,6 @@ def model_training(batch_id, model_name: str):
         trained_model = RandForest(
             train_data.iloc[:, -1], train_data.iloc[:, :-1], hidden_feature_df
         )
-    elif model_name == "ada_boost":
-        trained_model = AdaBoost(
-            train_data.iloc[:, -1], train_data.iloc[:, :-1], hidden_feature_df
-        )
     else:
         raise Exception("Unknown model")
 
@@ -108,14 +73,16 @@ def model_training(batch_id, model_name: str):
 
 
 def main(model_name: str):
-    cache_file_path = os.path.join(RESULT_DIR, f"{model_name}_cache.p")
-    if os.path.exists(cache_file_path):
-        model_repo = pickle.load(open(cache_file_path, "rb"))
-    else:
-        model_repo = {}
-        for batch_id in BATCH_IDS:
-            model_repo[batch_id] = model_training(batch_id, model_name)
-        pickle.dump(model_repo, open(cache_file_path, "wb"))
+    model_repo = {}
+    for batch_id in BATCH_IDS:
+        # cache by each batch
+        cache_file_path = os.path.join(RESULT_DIR, f"{model_name}_{batch_id}_cache.p")
+        if os.path.exists(cache_file_path):
+            model = pickle.load(open(cache_file_path, "rb"))
+        else:
+            model = model_training(batch_id, model_name)
+            pickle.dump(model, open(cache_file_path, "wb"))
+        model_repo[batch_id] = model
 
     predicted_labels = pd.concat(
         [
@@ -146,7 +113,5 @@ def main(model_name: str):
 
 
 if __name__ == "__main__":
-    # main("random_forest")
-    main("ada_boost")
-    # feature_extraction("10", "train")
-    # model_training("30", "random_forest")
+    main("random_forest")
+

@@ -1,8 +1,7 @@
 import json
 from typing import List
 
-NO_ANS = "N_A"
-NOT_DONE = "N_D"
+from constant import NO_ANS
 
 
 def translate(key_strokes, input_str):
@@ -27,6 +26,7 @@ def translate(key_strokes, input_str):
             output += "\n"
         elif key == "Equal":
             output += "="
+        # TODO: 375<<. ArrowRight/ArrowLeft用于迁移输入数位
         elif key == "ArrowRight":
             output += ">"
         elif key == "ArrowLeft":
@@ -65,7 +65,7 @@ def translate(key_strokes, input_str):
             continue
         else:
             print(key)
-    return output
+    return output.strip('\n')
 
 
 def score_list(user_list, right_list):
