@@ -376,7 +376,7 @@ class FeatureProcessor(object):
             .pipe(cls.add_verb_attempt_duration)
             .pipe(cls.add_duration_level, None, VERB_DURATION)
         )
-        middle_df = middle_df.query("duration_level<10")
+        middle_df["duration_level"] = middle_df["verb_duration"]
         verb_attempt_chain = middle_df.groupby(
             [INDEX_VAR, "occur_minute"], sort=False
         ).agg({"Observable": list, "ItemType": list, "duration_level": "sum"})
