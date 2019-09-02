@@ -1,7 +1,6 @@
 [[source]]
-url = "https://pypi.mirrors.ustc.edu.cn/simple/"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
 verify_ssl = true
-name = "pypi"
 
 [packages]
 scikit-learn = "*"
@@ -13,10 +12,10 @@ numba = "*"
 matplotlib = "*"
 tensorflow = "*"
 seaborn = "*"
+statsmodels = "*"
 
 [dev-packages]
-jupyter = "*"
-ipykernel = "*"
+plotly = "*"
 
 [requires]
 python_version = "3.6"

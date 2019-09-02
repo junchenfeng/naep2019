@@ -1,9 +1,9 @@
 from abc import ABCMeta, abstractmethod
 from collections import namedtuple
+import itertools
 
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import SGDClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import AdaBoostClassifier
@@ -97,38 +97,47 @@ class BaseModel(metaclass=ABCMeta):
 
 class RandForest(BaseModel):
     def _get_model(self):
-        return self.classifier(
-            n_estimators=3000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
-        )
+        return self.classifier()
 
     def train(self):
-        min_samples_leaf_list = list(range(1, 100, 30))
-        max_features_list = np.arange(0.1, 1, 0.3)
-        adj_scores = np.zeros((len(min_samples_leaf_list), len(max_features_list)))
-        for min_index, min_samples_leaf in enumerate(min_samples_leaf_list):
-            for max_index, max_features in enumerate(max_features_list):
-                self._model.min_samples_leaf = min_samples_leaf
-                self._model.max_features = max_features
-                self._train()
-                adj_scores[min_index, max_index] = self.metrics.adj_score
-        print(adj_scores)
-        best_arg_index = np.unravel_index(np.argmax(adj_scores), adj_scores.shape)
-        best_min_sample_leaf = min_samples_leaf_list[int(best_arg_index[0])]
-        best_max_features_list = max_features_list[int(best_arg_index[1])]
-        self._model.min_samples_leaf = best_min_sample_leaf
+        # Parameter Space
+        num_tree_list = [500, 1500, 3000]  # 3
+        max_features_list = np.arange(0.05, 0.66, 0.05)  #
+
+        # cross validate
+        best_score = 0
+        best_param_set = None
+        for param_set in itertools.product(num_tree_list, max_features_list):
+
+            num_tree, max_features = param_set
+            self._model.n_estimators = num_tree
+            self._model.max_features = max_features
+            self._train()
+
+            if self.metrics.adj_score > best_score:
+                best_score = self.metrics.adj_score
+                best_param_set = param_set
+            print(
+                f"n {num_tree}, feature frac {max_features}: score {self.metrics.adj_score}"
+            )
+
+        # set optimal and train again
+        best_num_tree, best_max_features = best_param_set
+        self._model.n_estimators = best_num_tree
+        self._model.max_features = best_max_features
         self._train()
         print(f"best score: {self.metrics}")
-        print(f"best min leaf: {best_min_sample_leaf}")
-        print(f"best max features: {best_max_features_list}")
+        print(f"best num tree: {best_num_tree}")
+        print(f"best max features: {best_max_features}")
 
     @classmethod
     def classifier(
-        cls, n_estimators=5000, random_state=0, verbose=1, max_features=0.7, n_jobs=2
+        cls, n_estimators=3000, random_state=0, verbose=1, max_features=0.3, n_jobs=3
     ):
         return RandomForestClassifier(
             n_estimators=n_estimators,
             random_state=random_state,
-            verbose=verbose,
+            # verbose=verbose,
             max_features=max_features,
             n_jobs=n_jobs,
         )
