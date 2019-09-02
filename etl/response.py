@@ -14,31 +14,9 @@ from etl.util import (
     ItemMatchMS,
     ItemMultipleBlanks,
     ItemCompositeCR,
-    NOT_DONE,
 )
 
-
-ITEM_LIST = [
-    "VH098810",
-    "VH098519",
-    "VH098808",
-    "VH139047",
-    "VH098759",
-    "VH098740",
-    "VH134366",
-    "VH098753",
-    "VH134387",
-    "VH098783",
-    "VH098812",
-    "VH139196",
-    "VH134373",
-    "VH098839",
-    "VH098597",
-    "VH098556",
-    "VH098779",
-    "VH098834",
-    "VH098522",
-]
+from constant import NOT_DONE, ITEM_LIST
 
 
 ITEM_REPO = {
@@ -87,6 +65,7 @@ class ConvertStreamTable2Json(luigi.Task):
             student_repo[sid] = {"label": label, "logs": defaultdict(list)}
 
         log_data = pd.read_csv(f"data/raw/data_a_{self.task}_{self.batch_id}.csv")
+        current_qid = None
         for i in tqdm(range(log_data.shape[0])):
             sid = str(log_data.iloc[i]["STUDENTID"])
             qid = log_data.iloc[i]["AccessionNumber"]
@@ -94,8 +73,8 @@ class ConvertStreamTable2Json(luigi.Task):
             info = log_data.iloc[i]["ExtendedInfo"]
             time = log_data.iloc[i]["EventTime"]
 
-            if action == "Enter Item":
-                current_qid = qid  # click Progress会改变qid
+            if current_qid is None or action == "Enter Item":
+                current_qid = qid  # click Progress会改变qid，因此只有Enter Item才会改变
 
             student_repo[sid]["logs"][current_qid].append((action, info, time))
 
