@@ -12,6 +12,7 @@ numpy = "*"
 numba = "*"
 matplotlib = "*"
 tensorflow = "*"
+seaborn = "*"
 
 [dev-packages]
 jupyter = "*"
