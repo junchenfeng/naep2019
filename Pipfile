@@ -8,6 +8,10 @@ pandas = "*"
 luigi = "*"
 tqdm = "*"
 numpy = "*"
+numba = "*"
+matplotlib = "*"
+tensorflow = "*"
+seaborn = "*"
 statsmodels = "*"
 
 [dev-packages]
