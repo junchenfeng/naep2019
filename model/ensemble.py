@@ -7,8 +7,9 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import AdaBoostClassifier
-from sklearn.metrics import cohen_kappa_score
 from sklearn.model_selection import cross_val_predict, cross_val_score
+from sklearn.metrics import cohen_kappa_score
+
 
 Metrics = namedtuple("Metrics", "auc kappa adj_score")
 

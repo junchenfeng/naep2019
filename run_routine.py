@@ -4,8 +4,10 @@ import pickle
 import pandas as pd
 
 
-from constant import TASK_TRAIN, TASK_HIDDEN
-from etl.raw_data import (
+from constant import (
+    TASK_TRAIN,
+    TASK_HIDDEN,
+    DATA_PATH,
     DATA_A_TRAIN_10_FILE_NAME,
     DATA_A_TRAIN_20_FILE_NAME,
     DATA_A_TRAIN_30_FILE_NAME,
@@ -14,9 +16,13 @@ from etl.raw_data import (
     DATA_A_HIDDEN_30_FILE_NAME,
     DATA_TRAIN_LABEL_FILE_NAME,
     HIDDEN_LABEL_FILE_NAME,
-    DATA_PATH,
 )
-from etl.data_processor import TimeFeatureProcessor, BehaviorFeatureProcessor, INDEX_VAR
+from etl.feature_processor import (
+    TimeFeatureProcessor,
+    BehaviorFeatureProcessor,
+    ResponseFeatureProcessor,
+    INDEX_VAR,
+)
 from model.ensemble import RandForest
 
 
@@ -37,15 +43,28 @@ BATCH_NAME_REF = {
 
 BATCH_IDS = ["10", "20", "30"]
 
-RESULT_DIR = "data/result"
+SRC_DATA_DIR = os.path.join(DATA_PATH, "raw")
+MID_DATA_DIR = os.path.join(DATA_PATH, "mid")
+RESULT_DIR = os.path.join(DATA_PATH, "result")
+
 if not os.path.exists(RESULT_DIR):
     os.makedirs(RESULT_DIR)
 
 
-def feature_extraction(batch_id: str, task_name: str):
-    df = pd.read_csv(os.path.join(DATA_PATH, BATCH_NAME_REF[batch_id][task_name]))
-    time_feature_df = TimeFeatureProcessor().change_data_to_feature_df(df)  # time
-    all_feature = time_feature_df
+def feature_extraction(batch_id: str, task_name: str, feature_set_name="TIME"):
+    if feature_set_name in ["TIME", "BEHAVIOR"]:
+        df = pd.read_csv(os.path.join(DATA_PATH, BATCH_NAME_REF[batch_id][task_name]))
+    elif feature_set_name == "RESPONSE":
+        df = pd.read_csv(f"data/mid/response_{task_name}_{batch_id}.csv")
+    else:
+        raise Exception(f"{feature_set_name} is not supported")
+    if feature_set_name == "TIME":
+        all_feature = TimeFeatureProcessor().change_data_to_feature_df(df)
+    elif feature_set_name == "BEHAVIOR":
+        all_feature = BehaviorFeatureProcessor().change_data_to_feature_df(df)
+    elif feature_set_name == "RESPONSE":
+        all_feature = ResponseFeatureProcessor().change_data_to_feature_df(df, batch_id)
+
     return all_feature
 
 
@@ -113,5 +132,5 @@ def main(model_name: str):
 
 
 if __name__ == "__main__":
-    main("random_forest")
-
+    # main("random_forest")
+    feature_extraction("10", "train", "RESPONSE")

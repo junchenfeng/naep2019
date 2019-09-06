@@ -5,16 +5,17 @@ import numpy as np
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 
 from etl.raw_data import DATA_PATH
-from constant import ITEM_LIST
+
+from constant import ITEM_LIST, INDEX_VAR, EVENT_TIME, DURATION
 
 MID_PATH = "data/mid"
 TIME_PERIOD_DF_NAME = "time_period_df.csv"
 
 # raw data constants
-INDEX_VAR = "STUDENTID"
+
 ACCESSION_NUMBER = "AccessionNumber"
 OBSERVABLE = "Observable"
-EVENT_TIME = "EventTime"
+
 CLICK_PROGRESS_NAVIGATOR = "Click Progress Navigator"
 BLOCK_REV = "BlockRev"
 EOS_TIME_LFT = "EOSTimeLft"
@@ -26,7 +27,7 @@ VERB_CHAIN = "verb_chain"
 # custom constants
 ADJACENT_GROUP_INDEX = "adjacent_group_index"
 VERB_ADJACENT_GROUP_INDEX = "verb_adjacent_group_index"
-DURATION = "Duration"
+
 SCALE_DURATION = "SCALED_DURATION"
 VERB_DURATION = "verb_duration"
 
@@ -327,6 +328,8 @@ class ResponseFeatureProcessor(object):
     @classmethod
     def change_data_to_feature_df(cls, df, batch_id: str):
         # has to be in the format of response_{task}_{batch_id}.csv
+        df.rename(columns={"sid": INDEX_VAR}, inplace=True)
+        df = df.set_index(INDEX_VAR)
         if batch_id == "10":
             response_item = ["VH098519", "VH098808", "VH098759", "VH098740", "VH098783"]
         filter_df = df[response_item]
@@ -513,7 +516,7 @@ class TimeFrameFeatureProcessor(FeatureProcessor):
         )
 
     @classmethod
-    def change_data_to_feature_df(cls, task_name:str):
+    def change_data_to_feature_df(cls, task_name: str):
         data_a_hidden = pd.concat(
             [
                 pd.read_csv(os.path.join(DATA_PATH, f"data_a_{task_name}_10.csv")),

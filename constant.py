@@ -1,3 +1,4 @@
+import os
 TASK_TRAIN = "train"
 TASK_HIDDEN = "hidden"
 
@@ -25,3 +26,18 @@ ITEM_LIST = [
     "VH098834",
     "VH098522",
 ]
+
+INDEX_VAR = "STUDENTID"
+EVENT_TIME = "EventTime"
+DURATION = "Duration"
+
+DATA_PATH = os.path.abspath("data")
+DATA_A_TRAIN_10_FILE_NAME = "data_a_train_10.csv"
+DATA_A_TRAIN_20_FILE_NAME = "data_a_train_20.csv"
+DATA_A_TRAIN_30_FILE_NAME = "data_a_train_30.csv"
+DATA_TRAIN_LABEL_FILE_NAME = "data_train_label.csv"
+
+DATA_A_HIDDEN_10_FILE_NAME = "data_a_hidden_10.csv"
+DATA_A_HIDDEN_20_FILE_NAME = "data_a_hidden_20.csv"
+DATA_A_HIDDEN_30_FILE_NAME = "data_a_hidden_30.csv"
+HIDDEN_LABEL_FILE_NAME = "hidden_label.csv"
