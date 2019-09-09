@@ -10,6 +10,7 @@ from data_prepare.data_saver import (
     TRAIN,
     HIDDEN,
     FEATURE_LIST,
+    WEIGHT_LIST,
     SAVE_DATA_PATH,
 )
 
@@ -39,6 +40,9 @@ class DataExporter(object):
         DataSaver.save_train_and_hidden(*MINUTE_10_DATA)
         DataSaver.save_train_and_hidden(*MINUTE_20_DATA)
         DataSaver.save_train_and_hidden(*MINUTE_30_DATA)
+        DataSaver.save_train_and_hidden_weight(*MINUTE_10_DATA)
+        DataSaver.save_train_and_hidden_weight(*MINUTE_20_DATA)
+        DataSaver.save_train_and_hidden_weight(*MINUTE_30_DATA)
 
     @property
     def minute_10_tuple(self):
@@ -53,6 +57,18 @@ class DataExporter(object):
         return self.get_minute_list_tuple(MINUTE_30)
 
     @property
+    def minute_10_weight_tuple(self):
+        return self.get_minute_list_tuple(MINUTE_10, WEIGHT_LIST)
+
+    @property
+    def minute_20_weight_tuple(self):
+        return self.get_minute_list_tuple(MINUTE_20, WEIGHT_LIST)
+
+    @property
+    def minute_30_weight_tuple(self):
+        return self.get_minute_list_tuple(MINUTE_30, WEIGHT_LIST)
+
+    @property
     def minute_10_dim(self):
         return self.get_minute_list_dim(MINUTE_10)
 
@@ -65,7 +81,7 @@ class DataExporter(object):
         return self.get_minute_list_dim(MINUTE_30)
 
     @classmethod
-    def get_minute_list_tuple(cls, minute_limit):
+    def get_minute_list_tuple(cls, minute_limit, name_list=FEATURE_LIST+WEIGHT_LIST):
         try:
             train_file = [
                 pd.read_csv(
@@ -73,7 +89,7 @@ class DataExporter(object):
                         SAVE_DATA_PATH, f"{TRAIN}_{minute_limit}_{feature}.csv"
                     )
                 ).set_index(STUDENTID)
-                for feature in FEATURE_LIST
+                for feature in name_list
             ]
             hidden_file = [
                 pd.read_csv(
@@ -81,7 +97,7 @@ class DataExporter(object):
                         SAVE_DATA_PATH, f"{HIDDEN}_{minute_limit}_{feature}.csv"
                     )
                 ).set_index(STUDENTID)
-                for feature in FEATURE_LIST
+                for feature in name_list
             ]
         except ValueError:
             raise ValueError("请先运行save_all一次进行数据持久化再调用。")
@@ -101,5 +117,5 @@ class DataExporter(object):
 if __name__ == "__main__":
     data_exporter = DataExporter()
     data_exporter.save_all()
-    test_df = data_exporter.minute_10_tuple
+    test_df = data_exporter.minute_10_weight_tuple
     test_dm = data_exporter.minute_10_dim

@@ -6,7 +6,8 @@ import tensorflow.keras.backend as K
 import matplotlib.pyplot as plt
 from data_prepare.data_importer import DataImporter
 from data_prepare.data_cleaner import ACCESSION_NUMBER, ITEM_TYPE, OBSERVABLE
-from data_prepare.data_exporter import DataExporter, FEATURE_LIST
+from data_prepare.data_encoder import VERB_WEIGHT
+from data_prepare.data_exporter import DataExporter, FEATURE_LIST, WEIGHT_LIST
 
 FEATURE_NUM_MAP = dict(zip(FEATURE_LIST, range(len(FEATURE_LIST))))
 SEED = 8
@@ -86,22 +87,21 @@ class Lstm(object):
         observable_input = tf.keras.layers.Input(
             (self.series_length,), name=f"{OBSERVABLE}_input"
         )
+        weight_input = tf.keras.layers.Input(
+            (self.series_length,), name=f"{VERB_WEIGHT}_input"
+        )
+        input_list = [accession_input, item_type_input, observable_input, weight_input]
         merged_input = self.construct_merged_input_layer(
-            [accession_input, item_type_input, observable_input], FEATURE_LIST
+            input_list, FEATURE_LIST+WEIGHT_LIST
         )
-        lstm_layer_1 = tf.keras.layers.LSTM(64, name="lstm_1", return_sequences=True)(
-            merged_input
+        spatial_drop_out = tf.keras.layers.SpatialDropout1D(0.3)(merged_input)
+        lstm_layer_1 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, name="lstm_1", return_sequences=True))(
+            spatial_drop_out
         )
-        lstm_layer_2 = tf.keras.layers.LSTM(32, name="lstm_2", return_sequences=True)(
-            lstm_layer_1
-        )
-        lstm_layer_3 = tf.keras.layers.LSTM(16, name="lstm_3", return_sequences=True)(
-            lstm_layer_2
-        )
-        lstm_layer_4 = tf.keras.layers.LSTM(8, name="lstm_4")(lstm_layer_1)
-        dense = tf.keras.layers.Dense(64, activation="relu", name="dense")(lstm_layer_4)
-        output = tf.keras.layers.Dense(1, activation="sigmoid", name="output")(dense)
-        return [accession_input, item_type_input, observable_input], output
+        dense = tf.keras.layers.Dense(64, activation="relu", name="dense")(lstm_layer_1)
+        common_drop_out = tf.keras.layers.Dropout(0.3)(dense)
+        output = tf.keras.layers.Dense(1, activation="sigmoid", name="output")(common_drop_out)
+        return input_list, output
 
     def construct_merged_input_layer(self, input_list, name_list):
         merged_layer_list = []
