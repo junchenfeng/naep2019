@@ -35,7 +35,7 @@ class DataImporter(object):
 
     @property
     def data_train_label(self):
-        return pd.read_csv(os.path.join(DATA_PATH, "data_train_label.csv"))
+        return pd.read_csv(os.path.join(DATA_PATH, "data_train_label.csv")).set_index("STUDENTID")
 
     @property
     def hidden_label(self):

@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 from data_prepare.data_importer import DataImporter
+from data_prepare.data_cleaner import STUDENTID
 from data_prepare.data_saver import (
     DataSaver,
     MINUTE_10,
@@ -51,23 +52,54 @@ class DataExporter(object):
     def minute_30_tuple(self):
         return self.get_minute_list_tuple(MINUTE_30)
 
+    @property
+    def minute_10_dim(self):
+        return self.get_minute_list_dim(MINUTE_10)
+
+    @property
+    def minute_20_dim(self):
+        return self.get_minute_list_dim(MINUTE_20)
+
+    @property
+    def minute_30_dim(self):
+        return self.get_minute_list_dim(MINUTE_30)
+
     @classmethod
     def get_minute_list_tuple(cls, minute_limit):
         try:
             train_file = [
-                pd.read_csv(os.path.join(SAVE_DATA_PATH, f"{TRAIN}_{minute_limit}_{feature}.csv"))
+                pd.read_csv(
+                    os.path.join(
+                        SAVE_DATA_PATH, f"{TRAIN}_{minute_limit}_{feature}.csv"
+                    )
+                ).set_index(STUDENTID)
                 for feature in FEATURE_LIST
             ]
             hidden_file = [
-                pd.read_csv(os.path.join(SAVE_DATA_PATH, f"{HIDDEN}_{minute_limit}_{feature}.csv"))
+                pd.read_csv(
+                    os.path.join(
+                        SAVE_DATA_PATH, f"{HIDDEN}_{minute_limit}_{feature}.csv"
+                    )
+                ).set_index(STUDENTID)
                 for feature in FEATURE_LIST
             ]
         except ValueError:
             raise ValueError("请先运行save_all一次进行数据持久化再调用。")
         return [train_file, hidden_file]
 
+    @classmethod
+    def get_minute_list_dim(cls, minute_limit):
+        try:
+            dim_df = pd.read_csv(
+                os.path.join(SAVE_DATA_PATH, f"{minute_limit}_dim.csv")
+            )
+        except ValueError:
+            raise ValueError("请先运行save_all一次进行数据持久化再调用。")
+        return dim_df["dim"].to_list()
+
 
 if __name__ == "__main__":
     data_exporter = DataExporter()
-    # data_exporter.save_all()
-    test = data_exporter.minute_10_tuple
+    data_exporter.save_all()
+    test_df = data_exporter.minute_10_tuple
+    test_dm = data_exporter.minute_10_dim

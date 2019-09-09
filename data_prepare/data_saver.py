@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 from data_prepare.data_importer import DataImporter
 from data_prepare.data_encoder import DataEncoder, FEATURE_LIST
 
@@ -17,7 +18,8 @@ class DataSaver(object):
     def save_train_and_hidden(
         cls, train, hidden, time_limit_prefix
     ):
-        train_list, hidden_list = DataEncoder.transform_train_and_hidden(train, hidden)
+        train_list, hidden_list, dim_list = DataEncoder.transform_train_and_hidden(train, hidden)
+        cls.save_dim_list(dim_list, time_limit_prefix)
         cls.save_df_list(train_list, TRAIN, time_limit_prefix)
         cls.save_df_list(hidden_list, HIDDEN, time_limit_prefix)
 
@@ -30,6 +32,19 @@ class DataSaver(object):
                     f"{train_hidden_prefix}_{time_limit_prefix}_{FEATURE_LIST[df_index]}.csv",
                 )
             )
+
+    @classmethod
+    def save_dim_list(cls, dim_list, time_limit_prefix):
+        dim_df = pd.DataFrame({
+            "feature_type": FEATURE_LIST,
+            "dim": dim_list
+        })
+        dim_df.to_csv(
+            os.path.join(
+                SAVE_DATA_PATH,
+                f"{time_limit_prefix}_dim.csv",
+            )
+        )
 
 
 if __name__ == "__main__":
