@@ -95,7 +95,7 @@ class Lstm(object):
             input_list, FEATURE_LIST+WEIGHT_LIST
         )
         spatial_drop_out = tf.keras.layers.SpatialDropout1D(0.3)(merged_input)
-        lstm_layer_1 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, name="lstm_1", return_sequences=True))(
+        lstm_layer_1 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, name="lstm_1"))(
             spatial_drop_out
         )
         dense = tf.keras.layers.Dense(64, activation="relu", name="dense")(lstm_layer_1)
