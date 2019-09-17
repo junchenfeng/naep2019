@@ -125,6 +125,7 @@ dmypy.json
 
 # custom
 data/
+logs/
 *.pyc
 .DS_Store
 *.txt
