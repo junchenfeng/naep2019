@@ -11,6 +11,7 @@ from data_prepare.data_saver import (
     HIDDEN,
     FEATURE_LIST,
     WEIGHT_LIST,
+    DURATION_LIST,
     SAVE_DATA_PATH,
 )
 
@@ -69,6 +70,18 @@ class DataExporter(object):
         return self.get_minute_list_tuple(MINUTE_30, WEIGHT_LIST)
 
     @property
+    def minute_10_duration_tuple(self):
+        return self.get_minute_list_tuple(MINUTE_10, DURATION_LIST)
+
+    @property
+    def minute_20_duration_tuple(self):
+        return self.get_minute_list_tuple(MINUTE_20, DURATION_LIST)
+
+    @property
+    def minute_30_duration_tuple(self):
+        return self.get_minute_list_tuple(MINUTE_30, DURATION_LIST)
+
+    @property
     def minute_10_dim(self):
         return self.get_minute_list_dim(MINUTE_10)
 
@@ -81,7 +94,7 @@ class DataExporter(object):
         return self.get_minute_list_dim(MINUTE_30)
 
     @classmethod
-    def get_minute_list_tuple(cls, minute_limit, name_list=FEATURE_LIST+WEIGHT_LIST):
+    def get_minute_list_tuple(cls, minute_limit, name_list=WEIGHT_LIST+DURATION_LIST):
         try:
             train_file = [
                 pd.read_csv(

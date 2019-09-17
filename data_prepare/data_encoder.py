@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, KBinsDiscretizer
 from sklearn.linear_model import LogisticRegression
@@ -16,7 +17,9 @@ from data_prepare.data_series_feature_computer import (
 
 FEATURE_LIST = [ACCESSION_NUMBER, ITEM_TYPE, OBSERVABLE]
 VERB_WEIGHT = "verb_weight"
+VERB_DURATION = "verb_duration"
 WEIGHT_LIST = [VERB_WEIGHT]
+DURATION_LIST = [VERB_DURATION]
 
 
 class BaseDataEncoder(object):
@@ -45,8 +48,47 @@ class DataObservationWeightEncoder(BaseDataEncoder):
             .pipe(cls.encode_df, observable_weight_map)
             .pipe(DataWeightSeriesFeatureComputer.get_series_feature)
         )
-        train_pivot_list = cls.transform_column(train, WEIGHT_LIST)
-        hidden_pivot_list = cls.transform_column(hidden, WEIGHT_LIST)
+        train_pivot_list, hidden_pivot_list = cls.transform_both_columns(
+            train, hidden, WEIGHT_LIST + DURATION_LIST
+        )
+        return train_pivot_list, hidden_pivot_list
+
+    @classmethod
+    def transform_both_columns(cls, train, hidden, columns):
+        def get_pad_list(df):
+            return df.groupby(STUDENTID, sort=False).agg(
+                lambda x: list(
+                    np.pad(
+                        list(x),
+                        (0, max_step_length - len(list(x))),
+                        "constant",
+                        constant_values=0,
+                    )
+                )
+            )
+
+        train_pivot_list = []
+        hidden_pivot_list = []
+        max_step_length = max(
+            train.groupby(STUDENTID)["verb_weight"].count().max(),
+            hidden.groupby(STUDENTID)["verb_weight"].count().max(),
+        )
+        return_columns = list(range(max_step_length))
+        tmp_train_group_values = get_pad_list(train)
+        tmp_hidden_group_values = get_pad_list(hidden)
+        for column in columns:
+            tmp_train_values = np.array(tmp_train_group_values[column].values.tolist())
+            tmp_hidden_values = np.array(tmp_hidden_group_values[column].values.tolist())
+            train_pivot_list.append(
+                pd.DataFrame(
+                    tmp_train_values, index=tmp_train_group_values.index, columns=return_columns
+                )
+            )
+            hidden_pivot_list.append(
+                pd.DataFrame(
+                    tmp_hidden_values, index=tmp_hidden_group_values.index, columns=return_columns
+                )
+            )
         return train_pivot_list, hidden_pivot_list
 
     @classmethod
@@ -80,7 +122,12 @@ class DataObservationWeightEncoder(BaseDataEncoder):
         ).toarray()
         verb_hidden = total_train_label_df["EfficientlyCompletedBlockB"].values
         # 逻辑回归拟合，获取所有参数的系数
-        clf = LogisticRegression(random_state=0, solver="liblinear", multi_class="ovr")
+        clf = LogisticRegression(
+            random_state=0,
+            solver="liblinear",
+            multi_class="ovr",
+            class_weight="balanced",
+        )
         clf.fit(verb_values, verb_hidden)
         verb_weight_map = pd.DataFrame(
             {
